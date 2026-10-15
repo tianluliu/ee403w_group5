@@ -1,0 +1,75 @@
+# Real-robot hardware configuration (single source of truth for hardware values).
+#
+# RULES
+#   * Anything not yet measured/verified is OMITTED (commented out), never guessed.
+#   * Tooling reports omitted values:  scripts/test.sh check-config firmware
+#   * Hardware-dependent firmware/launch generation must refuse to run while the
+#     required scope is incomplete.
+#   * Values marked [DATASHEET] come from vendor documentation (not yet verified on
+#     our unit). Values marked [PROPOSED] are conservative bring-up defaults that the
+#     team has not yet ratified.
+
+[safety]
+# Motors are DISABLED by default. The host bridge refuses ARM / non-zero DRV while false.
+# Only change to true on a branch/commit that the team has agreed for a specific test,
+# with the robot secured (wheels off the ground) for first tests.
+motors_enabled = false
+
+[limits]                     # [PROPOSED] conservative bring-up limits
+max_linear_mps    = 0.15
+max_angular_rps   = 0.6
+max_duty_permille = 500      # hard cap on open-loop PWM duty (1000 = 100 %)
+cmd_period_ms     = 100      # host resends the drive command at this period
+cmd_ttl_ms        = 250      # Arduino zeroes motors if no fresh command within this time
+link_timeout_ms   = 500      # Arduino disarms if NO valid frame at all within this time
+
+[drivetrain]
+# wheel_radius_m        = ?   # measure on chassis
+# track_width_m         = ?   # wheel-centre to wheel-centre, measure on chassis
+# output_free_speed_rpm = ?   # from the actual gearmotor part number/datasheet at the supply voltage
+open_loop_derate = 0.7       # [PROPOSED] fraction of free speed achievable under load; calibrate in Phase 2
+
+[encoders]
+present = "unknown"         # "unknown" | "yes" | "no"  -- MUST be verified on the physical motors
+# counts_per_wheel_rev = ?  # only if present = "yes"
+
+[body]
+# footprint_radius_m = ?    # circumscribed radius of chassis about base_link, measure
+# length_m = ?
+# width_m  = ?
+
+[lidar]
+model = "RPLIDAR C1"
+frame_id = "laser"              # sllidar_ros2 default
+range_min_m = 0.05              # [DATASHEET] blind range
+range_max_m = 12.0              # [DATASHEET]
+scan_hz = 10.0                  # [DATASHEET] typical (8-12 Hz)
+angular_increment_deg = 0.72    # [DATASHEET] at 10 Hz / 5 kHz sampling
+# mount_x_m   = ?               # laser origin in base_link, measure
+# mount_y_m   = ?
+# mount_z_m   = ?
+# mount_yaw_rad = ?             # verify scan zero direction vs. robot forward
+
+[serial]
+lidar_port   = "/dev/ttyUSB0"   # replace with udev by-id symlink in Phase 2
+lidar_baud   = 460800           # sllidar_ros2 C1 launch default
+arduino_port = "/dev/ttyACM0"   # Uno R3 typically ttyACM0; clones (CH340) appear as ttyUSB*
+arduino_baud = 115200
+
+[arduino_pins]
+# Pin map for Cytron MDD10A (PWM + DIR per channel). Fill in from the physical wiring.
+# PWM pins must be one of Uno's PWM-capable pins: 3, 5, 6, 9, 10, 11. D0/D1 are reserved (USB serial).
+# left_pwm  = ?
+# left_dir  = ?
+# right_pwm = ?
+# right_dir = ?
+# Encoder pins only if encoders.present = "yes":
+# enc_left_a = ?
+# enc_left_b = ?
+# enc_right_a = ?
+# enc_right_b = ?
+
+[power]
+# battery_chemistry  = "?"     # unknown: not stated in PDR
+# battery_nominal_v  = ?
+# battery_capacity_ah = ?

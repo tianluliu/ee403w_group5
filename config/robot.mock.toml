@@ -1,0 +1,61 @@
+# MOCK configuration used ONLY by unit tests and the simulation foundation.
+# Every number here is a made-up placeholder so software can be exercised.
+# It says NOTHING about the real chassis. Never use it to generate firmware or launch files
+# for the physical robot.
+
+[meta]
+mock = true                     # loader refuses to use mock configs for hardware-dependent scopes
+
+[safety]
+motors_enabled = false          # tests enable explicitly via dataclasses.replace()
+
+[limits]
+max_linear_mps    = 0.15
+max_angular_rps   = 0.6
+max_duty_permille = 500
+cmd_period_ms     = 100
+cmd_ttl_ms        = 250
+link_timeout_ms   = 500
+
+[drivetrain]
+wheel_radius_m        = 0.04    # MOCK
+track_width_m         = 0.20    # MOCK
+output_free_speed_rpm = 80.0    # MOCK
+open_loop_derate      = 0.7
+
+[encoders]
+present = "no"                  # MOCK: open-loop odometry only
+
+[body]
+footprint_radius_m = 0.15       # MOCK
+length_m = 0.28
+width_m  = 0.24
+
+[lidar]
+model = "RPLIDAR C1"
+frame_id = "laser"
+range_min_m = 0.05
+range_max_m = 12.0
+scan_hz = 10.0
+angular_increment_deg = 0.72
+mount_x_m = 0.05                # MOCK
+mount_y_m = 0.0
+mount_z_m = 0.15
+mount_yaw_rad = 0.0
+
+[serial]
+lidar_port   = "/dev/ttyUSB0"
+lidar_baud   = 460800
+arduino_port = "/dev/ttyACM0"
+arduino_baud = 115200
+
+[arduino_pins]                  # MOCK pin map (not the real wiring)
+left_pwm  = 5
+left_dir  = 4
+right_pwm = 6
+right_dir = 7
+
+[power]
+battery_chemistry   = "mock"
+battery_nominal_v   = 12.0
+battery_capacity_ah = 5.0
