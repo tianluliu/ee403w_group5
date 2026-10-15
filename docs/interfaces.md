@@ -26,9 +26,15 @@ hardware or a real ROS 2 install.
 | `/tf` | `tf2_msgs/TFMessage` | see section 2.1 | all | Dynamic transforms. |
 | `/tf_static` | `tf2_msgs/TFMessage` | `base_link -> laser` publisher | all | Transient-local. |
 
-Proposed project-specific interfaces (names are placeholders until the ROS skeleton task):
-an emergency-stop flag (`std_msgs/Bool`, latched), a start service (`std_srvs/Trigger`),
-an exploration status topic, and a heartbeat topic from the bridge node.
+Project-specific interfaces:
+
+| Interface | Type | State |
+|---|---|---|
+| `/robot/heartbeat` | `std_msgs/Header` (`frame_id` = source id, `stamp` = ROS time) | skeleton node written (`robot_base_bridge/heartbeat_node`), **UNVERIFIED**. It shows the software graph is alive; it is **not** the motor safety mechanism (that is the Arduino watchdog). |
+| `/scan` from `mock_scan_node` | `sensor_msgs/LaserScan` | skeleton written, **UNVERIFIED**; publishes fake obstacles and refuses non-mock configs |
+| emergency-stop flag | `std_msgs/Bool`, latched | proposed name only |
+| start command | `std_srvs/Trigger` | proposed, see HQ-16 |
+| exploration status | topic | proposed only |
 
 ### 2.1 Required TF chain and frame owners
 
@@ -134,10 +140,14 @@ NAK reasons: `BAD_FRAME` (framing, checksum or size error), `BAD_ARGS`, `UNKNOWN
 Recommended hardware companion (not yet confirmed, HQ-08): pull-down resistors on the MDD10A PWM
 inputs so the outputs stay low while the Uno is resetting or its pins are high impedance.
 
-### 3.5 Host obligations
+### 3.5 Host obligations (implemented in `MotorBridge`, except the periodic scheduling)
 
 - Send `DRV` at `limits.cmd_period_ms` (100 ms) with `ttl_ms = limits.cmd_ttl_ms` (250 ms). When
-  idle, send `STOP` or `PING` at no more than half of `link_timeout_ms`.
+  idle, send `STOP` or `PING` at no more than half of `link_timeout_ms`. The bridge class sends
+  one command per call; the periodic loop belongs to the Phase 2 bridge node.
+- Sequence numbers run 1..65535 and skip 0 (0 is reserved for replies about unusable frames).
+  `DRV` is never retried automatically; `STOP`/`DISARM` are retried up to 3 times.
+- A reply is accepted only if its sequence number matches; other replies are counted as stale.
 - Refuse `ARM` and every non-zero `DRV` unless `safety.motors_enabled = true` in the loaded
   config (`false` by default).
 - Treat any exception in the velocity-to-duty conversion as "stop".
@@ -166,6 +176,10 @@ $NAK,0,BAD_FRAME*31                      MCU  -> host   (corrupt input)
 |---|---|
 | `lidar_robot.kinematics` | `Twist` to wheel speeds to capped open-loop duty (`twist_to_drive(cfg, twist)`). |
 | `lidar_robot.mock_mcu.MockMotorController` | Arduino model; `feed(bytes) -> bytes`, `tick()`, `outputs`, `state`, `fault`. |
+| `lidar_robot.transport` | `Transport` interface (`write`, `read`, `close`, `is_simulated`) and `LoopbackTransport` with fault injection (disconnect, dropped writes/replies, corrupted replies, noise, fragmented reads). No serial implementation exists yet. |
+| `lidar_robot.bridge.MotorBridge` | Host client: `connect`, `arm`, `send_twist`, `stop`, `disarm`, `ping`, `stat`, `close`. Errors: `MotorsDisabledError`, `NotArmedError`, `LinkError`/`TransportDown`, `ProtocolMismatch`, `MotorRejected`, `ConfigSafetyError`. `stop()`/`disarm()` never raise and return whether the MCU acknowledged. |
+| `lidar_robot.frames` | `Transform`, `TfTree` (one parent, no cycles, one publisher per edge), `validate_required_chain`, `laser_mount_transform`, `mock_tf_edges` (mock configs only), `static_publisher_args`. |
+| `lidar_robot.metrics` | `Grid` (OccupancyGrid semantics), `accessible_cells`, `coverage(robot_map, truth, start, inflate_cells)` returning a `CoverageResult` with `.fraction` and `.meets(0.90)`. |
 | `lidar_robot.world.World` | 2D walls/boxes with `raycast`. |
 | `lidar_robot.mock_lidar.MockLidar` | `scan(Pose2D, stamp_ms) -> ScanData` with LaserScan-shaped fields. |
 | `lidar_robot.clock` | `SystemClock`, `FakeClock`, `Deadline` for deterministic timing tests. |

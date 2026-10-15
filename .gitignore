@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Local connection settings (never commit)
+scripts/pi.env
+
+# colcon / ROS 2 build output
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Experiment output (maps, bags, logs) - keep out of version control by default
+/data/
+/logs/
+*.bag
+*.mcap
+*.db3

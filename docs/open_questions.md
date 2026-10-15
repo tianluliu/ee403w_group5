@@ -41,6 +41,7 @@ decisions.
 | HQ-16 | How is the "initial start command" given? | Proposed: a ROS service call over SSH, or a physical button read by the Arduino. Needs a choice. |
 | HQ-17 | Test environment(s): size, obstacle types, surfaces. | A planar LiDAR sees only obstacles that cross its scan plane; glass and very dark or reflective surfaces may behave badly. Test obstacles must cross the scan plane. |
 | HQ-18 | Battery runtime test load profile and start/stop criteria. | requirements.md section 5 proposes one. |
+| HQ-19 | Which license applies to the code, and who is the maintainer contact for the ROS packages? | Every `package.xml` and `setup.py` currently says `TODO` for the license and uses the placeholder `team@example.invalid`. |
 
 ## D. Schedule note
 

@@ -101,7 +101,10 @@ Only software behaviour is covered. No acceptance criterion R-01 to R-07 is yet 
 
 | Requirement | Automated checks that exist today (`tests/unit`) |
 |---|---|
-| S-01, S-02 | `test_mock_mcu` (boot state, TTL, link timeout, late frame, fail-safe, fuzz of invariants); `test_config` (motors disabled in both configs) |
+| S-01, S-02 | `test_mock_mcu` (boot state, TTL, link timeout, late frame, fail-safe, fuzz of invariants); `test_config` (motors disabled in both configs); `test_bridge` (no arm/drive byte is written while disabled; fault-injection fuzz) |
+| S-03 | `test_bridge` (`stop`/`disarm` always available and never raise). The physical kill switch and `/estop` are not built (HQ-08, HQ-09). |
+| A-03 | `test_frames` (required chain, one parent, one publisher, static laser mount); `test_ros_package_structure` (static metadata only; ROS runtime UNVERIFIED) |
+| T-COV tooling | `test_metrics` (coverage and accessible-area computation on hand-checked grids). The test procedure itself has not been run. |
 | S-04 | `test_kinematics` (limits, duty cap, curvature preserved); `test_mock_mcu` (MCU-side cap) |
 | S-09, A-04, A-05 | `test_config` (incomplete values reported, mock refused); `test_kinematics`, `test_world_and_lidar` (missing hardware values refused) |
 | Protocol | `test_protocol` (framing, checksum, 64-byte limit, fragmentation, recovery) |

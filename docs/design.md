@@ -66,7 +66,9 @@ Nav2 planner/controller ─► velocity smoother ─► collision monitor ─►
 | Arduino command TTL | stalled bridge, stale command | modelled and tested in the mock |
 | Arduino duty cap, range checks | host bug, corrupt value | modelled and tested in the mock |
 | Boot DISARMED, ARM required | accidental motion at reset | modelled and tested in the mock |
-| Host `motors_enabled` gate | running tests against hardware by accident | config default `false`; bridge not yet written |
+| Host `motors_enabled` gate | running tests against hardware by accident | **(exists)** `MotorBridge` refuses `arm`/`send_twist` before writing any byte; default `false` |
+| Host fail-safe STOP | a bad value or lost reply on the drive path | **(exists)** `MotorBridge.send_twist` sends STOP, then re-raises |
+| Mock-config refusal | invented dimensions driving a real robot | **(exists)** `MotorBridge` rejects a mock config on a non-simulated transport |
 | Kinematics limits and duty cap | commanding more than the bring-up envelope | **(exists)** `kinematics.twist_to_drive` |
 | Config completeness check | firmware/launch from guessed numbers | **(exists)** `RobotConfig.require_complete` |
 | Collision monitor (scan-based) | obstacles that Nav2 misjudges | planned (Phase 4) |
@@ -116,30 +118,35 @@ Nothing in this workflow touches hardware until a task explicitly says so and is
 Exists:
 
 ```
-config/            robot.toml, robot.mock.toml
-src/lidar_robot/   clock, config, protocol, kinematics, mock_mcu, world, mock_lidar   (stdlib only)
-tests/unit/        platform-independent tests (unittest)
-docs/              this folder
+config/                  robot.toml, robot.mock.toml
+src/lidar_robot/         clock, config, protocol, kinematics, transport, bridge, mock_mcu,
+                         world, mock_lidar, frames, metrics            (stdlib only)
+tests/unit/              platform-independent tests (unittest)
+tests/ros2_integration/  ROS 2 tests: UNVERIFIED, skipped without rclpy
+ros2_ws/src/             ROS 2 Jazzy skeletons, never built or run (below)
+scripts/                 test.sh, check_env.sh, deploy.sh, remote.sh
+docs/                    this folder
 ```
 
-Planned (not created yet): `scripts/` (test, env check, deploy, remote), `ros2_ws/src/` with the
-packages below, `tests/ros2_integration/` (skipped automatically when `rclpy` is missing),
-`firmware/` (specification only until approved).
+Not created: `firmware/` (specification only until approved).
 
-| Planned ROS package | Role |
-|---|---|
-| `robot_bringup` | launch files and parameters (`mock` and `hardware` profiles) |
-| `robot_base_bridge` | `/cmd_vel` to serial; heartbeat; uses `lidar_robot` |
-| `robot_description` | static `base_link -> laser` from `robot.toml` |
-| `robot_exploration` | start trigger, termination criterion, timeouts, map save, logging |
-| `robot_mock` | mock LaserScan publisher and fake base for tests without hardware |
+| ROS package | State | Role |
+|---|---|---|
+| `robot_base_bridge` | skeleton, heartbeat node only | will host the `/cmd_vel` to serial bridge node in Phase 2 |
+| `robot_mock` | skeleton, mock `/scan` node (mock configs only) | exercise the ROS graph without hardware |
+| `robot_bringup` | `heartbeat.launch.py`, `mock.launch.py`; no hardware launch file | launch files; the hardware profile arrives in Phase 2 |
+| `robot_description` | planned | static `base_link -> laser` from `robot.toml` |
+| `robot_exploration` | planned | start trigger, termination criterion, timeouts, map save, logging |
+
+The ROS nodes are thin by design. They contain no motor-command path (a unit test checks this
+statically); the logic they will call lives in `lidar_robot`, which is tested on the Mac.
 
 ## 10. Test strategy
 
 | Level | Where | Contents | Status |
 |---|---|---|---|
-| Platform-independent unit | Mac and Pi | protocol, config, kinematics, mock MCU, world, mock LiDAR | 178 tests, passing on the Mac |
-| ROS 2 integration | Pi only | mock-LaserScan publisher, TF chain, heartbeat, launch | not written |
+| Platform-independent unit | Mac and Pi | protocol, config, kinematics, mock MCU, bridge, world, mock LiDAR, TF validator, coverage metric, static ROS package structure, script safety | 307 tests, passing on the Mac; not yet run on the Pi |
+| ROS 2 integration | Pi only | mock-LaserScan publisher, heartbeat, refusal of real config | written, **UNVERIFIED** (never run; skipped on the Mac) |
 | Hardware, wheels elevated | Pi + robot | bridge, watchdog stop, LiDAR scan check | Phase 2, needs approval |
 | System | Pi + robot | coverage, obstacle, termination, runtime | Phases 3-6 |
 
