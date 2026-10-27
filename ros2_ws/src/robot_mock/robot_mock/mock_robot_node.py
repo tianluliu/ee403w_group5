@@ -38,7 +38,7 @@ from lidar_robot.mock_mcu import MockMotorController
 from lidar_robot.simulator import Simulator2D
 from lidar_robot.transport import LoopbackTransport
 
-from .worlds import build_demo_world
+from .worlds import build_complex_world
 
 
 def yaw_quaternion(yaw):
@@ -72,7 +72,7 @@ class MockRobotNode(Node):
         )
 
         self._cfg = sim_cfg
-        self._world = build_demo_world()
+        self._world = build_complex_world()
 
         initial_pose = Pose2D(
             float(self.get_parameter("pose_x").value),

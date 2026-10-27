@@ -21,6 +21,7 @@ PACKAGES = (
     "robot_base_bridge",
     "robot_mock",
     "robot_bringup",
+    "robot_explorer",
 )
 
 ALLOWED_THIRD_PARTY = {
@@ -29,6 +30,8 @@ ALLOWED_THIRD_PARTY = {
     "sensor_msgs",
     "geometry_msgs",
     "nav_msgs",
+    "nav2_msgs",
+    "action_msgs",
     "tf2_ros",
     "visualization_msgs",
     "launch",
@@ -189,6 +192,13 @@ class PackageMetadataTests(unittest.TestCase):
             },
 
             "robot_bringup": {},
+
+            "robot_explorer": {
+                "explorer_node": (
+                    "robot_explorer.explorer_node",
+                    "main",
+                ),
+            },
         }
 
         for pkg in PACKAGES:
@@ -257,6 +267,7 @@ class PackageMetadataTests(unittest.TestCase):
         for pkg in (
             "robot_base_bridge",
             "robot_mock",
+            "robot_explorer",
         ):
             text = (
                 WS_SRC
@@ -391,7 +402,6 @@ class SafetyBoundaryTests(unittest.TestCase):
             "/dev/tty",
             "MotorBridge",
             "twist_to_drive",
-            "geometry_msgs",
             "lidar_robot.bridge",
             "lidar_robot.transport",
             "lidar_robot.kinematics",
