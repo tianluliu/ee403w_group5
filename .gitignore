@@ -21,3 +21,4 @@ ros2_ws/log/
 *.bag
 *.mcap
 *.db3
+ros2_ws/src/sllidar_ros2/
