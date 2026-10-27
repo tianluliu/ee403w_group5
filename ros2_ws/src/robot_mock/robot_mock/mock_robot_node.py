@@ -90,7 +90,15 @@ class MockRobotNode(Node):
         self._bridge = MotorBridge(self._transport, sim_cfg, self._mono_clock)
 
         info = self._bridge.connect()
-        self._bridge.arm()
+
+        # Keep the simulated MCU DISARMED during ROS/Nav2 startup. Arming here
+        # can trip the MCU link watchdog if the Pi is briefly busy configuring
+        # the navigation stack. Each independent motion session arms explicitly.
+        #
+        # A watchdog failure during an active motion session is not automatically
+        # recovered; a later explicit idle boundary is required before a new
+        # motion session may arm again.
+        self._motion_session_active = False
 
         self.get_logger().info(
             f"Simulated Uno connected: firmware={info.fw_id}, "
@@ -173,11 +181,46 @@ class MockRobotNode(Node):
             and now - self._latest_cmd_ms < self._cfg.limits.cmd_ttl_ms
         )
 
+        motion_requested = (
+            abs(self._latest_cmd.linear) > 1e-9
+            or abs(self._latest_cmd.angular) > 1e-9
+        )
+
         try:
-            if fresh:
+            # Each explicit motion session begins with ARM.  A fresh zero Twist
+            # ends the session, allowing a later independent navigation goal to
+            # arm again.
+            #
+            # A stale command does NOT end the motion session.  Therefore, if
+            # the MCU watchdog disarms during active motion, subsequent drive
+            # commands in that same session cannot silently re-arm it.
+            if fresh and motion_requested:
+                if not self._motion_session_active:
+                    self._bridge.arm()
+                    self._motion_session_active = True
+                    self.get_logger().info(
+                        "Simulated Uno armed for new motion session"
+                    )
+
                 self._bridge.send_twist(self._latest_cmd)
-            else:
+
+            elif fresh:
+                # A fresh zero velocity command is an explicit idle boundary.
                 self._bridge.stop()
+
+                if self._motion_session_active:
+                    self.get_logger().info(
+                        "Simulated motion session ended"
+                    )
+
+                self._motion_session_active = False
+
+            else:
+                # Stale command: stop safely, but do not make this a new
+                # session.  A watchdog failure during active motion remains
+                # latched until an explicit zero command ends the session.
+                self._bridge.stop()
+
         except Exception as exc:
             self._bridge.stop()
             self.get_logger().error(f"drive command failed safely: {exc}")

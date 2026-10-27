@@ -15,6 +15,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>robot_base_bridge</exec_depend>
   <exec_depend>robot_mock</exec_depend>
 

@@ -291,6 +291,7 @@ class PackageMetadataTests(unittest.TestCase):
                 "heartbeat.launch.py",
                 "mock.launch.py",
                 "sim.launch.py",
+                "sim_nav.launch.py",
                 "sim_slam.launch.py",
             ],
         )
