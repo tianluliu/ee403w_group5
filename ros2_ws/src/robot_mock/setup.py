@@ -18,7 +18,8 @@ setup(
     license="TODO: team to choose a license",
     entry_points={
         "console_scripts": [
-            "mock_scan_node = robot_mock.mock_scan_node:main",
-        ],
+    "mock_scan_node = robot_mock.mock_scan_node:main",
+    "mock_robot_node = robot_mock.mock_robot_node:main",
+ ],
     },
 )
