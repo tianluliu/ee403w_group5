@@ -228,3 +228,12 @@ Optional `benchmark_tf_diagnostics=false` enables read-only TF probes and
 `/plan` (`nav_msgs/Path`, depth 1) / `/rosout` (`rcl_interfaces/Log`, depth 100)
 subscriptions when benchmark output is configured. Additive JSONL fields and
 events are defined in `TF_DIAGNOSTICS.md`; no ROS publishers or TF owners change.
+
+## Simulator control diagnostics (optional)
+
+`sim_nav`/`sim_slam` launch argument `control_diagnostics=false` forwards a bool
+to `mock_robot`. When true, `/sim/control_diagnostics` publishes 1 Hz JSON in
+`std_msgs/String` (reliable/volatile, depth 10), schema documented in
+`SIM_DIAGNOSTICS.md`. No control/TF topic ownership changes. The mock MCU now
+accepts an optional observation callback and exposes read-only
+`diagnostic_state()`; neither sends frames nor ticks/refreshes deadlines.

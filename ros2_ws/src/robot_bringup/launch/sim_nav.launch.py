@@ -11,9 +11,9 @@ Nav2 consumes the live map, odometry, TF and LaserScan data and produces /cmd_ve
 import os
 
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -48,8 +48,12 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument("control_diagnostics", default_value="false"),
         IncludeLaunchDescription(
             sim_slam_launch,
+            launch_arguments={
+                "control_diagnostics": LaunchConfiguration("control_diagnostics"),
+            }.items(),
         ),
 
         IncludeLaunchDescription(

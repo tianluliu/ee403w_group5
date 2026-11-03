@@ -47,6 +47,7 @@ class MockMotorController:
         max_duty_permille: int = 1000,
         caps: int = 0,
         fw_id: str = "mock-0.1",
+        observer=None,
     ) -> None:
         if link_timeout_ms <= 0:
             raise ValueError("link_timeout_ms must be > 0")
@@ -55,6 +56,12 @@ class MockMotorController:
         if not 0 <= caps <= 0xFF:
             raise ValueError("caps must fit in one byte")
         protocol.encode("HELLO", fw_id)  # validates the token
+        self._observer = observer
+        self._diagnostic_previous_command = None
+        self._diagnostic_last_command = None
+        self._diagnostic_command_counts = {}
+        self._diagnostic_last_command_ms = None
+        self._diagnostic_errors = 0
         self._clock = clock
         self._max_duty = max_duty_permille
         self._caps = caps
@@ -71,10 +78,10 @@ class MockMotorController:
         self.history: List[Tuple[int, int, int]] = [(self._boot_ms, 0, 0)]
 
     @classmethod
-    def from_config(cls, cfg: RobotConfig, clock: Clock) -> "MockMotorController":
+    def from_config(cls, cfg: RobotConfig, clock: Clock, *, observer=None) -> "MockMotorController":
         caps = protocol.CAP_ENCODERS if cfg.encoders.present == "yes" else 0
         return cls(clock, link_timeout_ms=cfg.limits.link_timeout_ms,
-                   max_duty_permille=cfg.limits.max_duty_permille, caps=caps)
+                   max_duty_permille=cfg.limits.max_duty_permille, caps=caps, observer=observer)
 
     # ---- observable state ------------------------------------------------------------
 
@@ -87,6 +94,27 @@ class MockMotorController:
     def ttl_remaining_ms(self) -> int:
         return self._cmd.remaining_ms() if self._cmd is not None else 0
 
+    def diagnostic_state(self) -> dict:
+        """Read only: does not tick watchdogs, send frames or refresh deadlines."""
+        return {"state": self.state, "fault": self.fault,
+                "ttl_remaining_ms": self.ttl_remaining_ms,
+                "link_age_ms": self._link.elapsed_ms(),
+                "link_remaining_ms": self._link.remaining_ms(),
+                "outputs": list(self.outputs),
+                "last_command": self._diagnostic_last_command,
+                "last_command_ms": self._diagnostic_last_command_ms,
+                "command_counts": dict(self._diagnostic_command_counts),
+                "observer_errors": self._diagnostic_errors}
+
+    def _observe(self, event, **fields):
+        if self._observer is not None:
+            try:
+                self._observer({"event": event, "monotonic_ms": self._clock.now_ms(),
+                                "mcu": self.diagnostic_state(), **fields})
+            except Exception:
+                # Diagnostics must never interfere with protocol/watchdog behavior.
+                self._diagnostic_errors += 1
+
     # ---- time and I/O ------------------------------------------------------------------
 
     def tick(self) -> None:
@@ -96,8 +124,10 @@ class MockMotorController:
                 self._stop_outputs()
                 self.state = protocol.STATE_DISARMED
                 self.fault = protocol.FAULT_LINK_TIMEOUT
+                self._observe("watchdog_disarm")
             elif self._cmd is not None and self._cmd.expired():
                 self._stop_outputs()
+                self._observe("command_ttl_expired")
 
     def feed(self, data: bytes) -> bytes:
         """Receive serial bytes; return the bytes the MCU would transmit in reply."""
@@ -107,6 +137,12 @@ class MockMotorController:
             if isinstance(item, protocol.ProtocolError):
                 replies.append(self._nak(0, protocol.REASON_BAD_FRAME))
                 continue
+            if self._observer is not None:
+                self._diagnostic_previous_command = self._diagnostic_last_command
+                self._diagnostic_last_command = item.cmd
+                self._diagnostic_last_command_ms = self._clock.now_ms()
+                key = item.cmd if item.cmd in protocol.HOST_COMMANDS else "OTHER"
+                self._diagnostic_command_counts[key] = self._diagnostic_command_counts.get(key, 0) + 1
             self._link.reset()  # only complete, checksum-valid frames count as link activity
             replies.append(self._handle(item))
         return b"".join(replies)
@@ -149,13 +185,17 @@ class MockMotorController:
             self._stop_outputs()  # arming never starts motion
             self.fault = protocol.FAULT_NONE
             self.state = protocol.STATE_ARMED
+            self._observe("arm", seq=seq)
             return self._ack(seq)
         if frame.cmd == "DISARM":
             self._stop_outputs()
             self.state = protocol.STATE_DISARMED
+            self._observe("disarm", seq=seq)
             return self._ack(seq)
         if frame.cmd == "STOP":
             self._stop_outputs()
+            if self._diagnostic_previous_command != "STOP":
+                self._observe("stop", seq=seq)
             return self._ack(seq)
         if frame.cmd == "STAT":
             uptime = (self._clock.now_ms() - self._boot_ms) & 0xFFFFFFFF
@@ -178,6 +218,7 @@ class MockMotorController:
             return self._reject_drv(seq, protocol.REASON_BAD_ARGS)
         left, right, ttl = (int(a) for a in args)
         if self.state != protocol.STATE_ARMED:
+            self._observe("drive_rejected", seq=seq, reason=protocol.REASON_NOT_ARMED)
             return self._nak(seq, protocol.REASON_NOT_ARMED)
         if abs(left) > self._max_duty or abs(right) > self._max_duty:
             return self._reject_drv(seq, protocol.REASON_RANGE)

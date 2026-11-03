@@ -153,7 +153,7 @@ Evidence that distinguishes the causes:
 Tests here cover serialization, failed-vs-latest lookups, static/future stamps,
 state observation and completion guards. The optional ROS smoke test exercises
 timer/subscription/output wiring. The `tf-02` reproduction identifies the
-timestamp failure below; validation of the controlled fix remains pending.
+timestamp failure below; `tf-03` provides initial comparison validation.
 
 
 ## tf-02 evidence and single-variable restamp experiment
@@ -200,7 +200,7 @@ All exploration parameters, speed limits, completion semantics, TF owners and
 motor/safety behavior remain unchanged. Separately observed simulated motor
 "not armed" errors remain unresolved and outside this experiment.
 
-### Exact Pi verification procedure (runtime validation pending)
+### Restamp comparison procedure (executed as tf-03)
 
 Transfer this commit using the normal team workflow, then check its SHA on the
 Pi. Stop previous simulation/Nav2/explorer/bag processes and use one fresh stack,
@@ -293,3 +293,40 @@ Compare against `tf-02` using action errors, console exceptions and raw TF:
 One successful comparison is initial runtime evidence, not full acceptance.
 Repeat before claiming reliability; keep sealed-room/doorway and safety tests
 passing. Do not tune other variables during this experiment.
+
+
+## tf-03 comparison result
+
+`dc0db51` with `restamp_tf=true` reached COMPLETE in 549.97 s, traveled 18.31 m,
+and sent 7 navigation requests, all accepted: 3 successes, 4 aborts. Versions
+were unchanged and controller parameter dumps identical to `tf-02`; the SLAM
+dump differed only in restamp_tf. Console/rosout/raw bag show zero MPPI transform
+exceptions/code-102 aborts (versus six exceptions/four terminal 102s in tf-02).
+Raw map/odom timestamp publication was 49.49 Hz with median receipt-time age
+-0.199 s. Mark the original issue **provisionally resolved in simulation**;
+this is not a claim that all TF or mapping issues are resolved.
+
+Remaining observations:
+- Four terminal aborts: attempt 1 code 0/empty message, status ABORTED after planner
+  action acknowledgement timeout; attempts 5--7 code 208/empty message after
+  repeated NO_VALID_PATH planner failures.
+- Ten collision-monitor transform exceptions and eight invalid-source stop
+  episodes. Base-shift compensation needs dynamic odom/base at monitor time;
+  the static laser mount is not the failed edge. No compensation/tolerance fix
+  has been applied.
+- Raw odometry/odom-TF rates were 19.60 Hz rather than nominal 50 Hz. Bag maximum
+  header gaps were 1.005/0.874 s, respectively. The benchmark maximum 2.479 s
+  also includes receiver sample loss; it is not a matching raw publisher gap.
+- Bagged rosout contains 263 host not-known-ARMED errors and one MCU NOT_ARMED
+  rejection. Prolonged groups occur at 337.2--356.8 and 360.1--381.1 s, with zero
+  translation. Safety latching remains intentional; exact control/link timing
+  needs the next instrumented capture.
+- Sixteen internal progress failures include local-navigation plateaus; they
+  do not justify weakening the progress checker.
+- Map/odom translation correction grew to 3.69 m and ended near (-0.767, -2.983)
+  m with -4.15 degree yaw. The existing completion gates passed, but no `/map`
+  was bagged. Premature completion from map inconsistency cannot be ruled out;
+  no formal coverage acceptance is claimed.
+
+Next: the simulator timing and map-quality capture in `SIM_DIAGNOSTICS.md`.
+No other SLAM/controller/exploration/safety parameters are changed.

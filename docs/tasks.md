@@ -43,8 +43,11 @@ Before changing the frontier policy:
 - [x] audit TF source/configuration and add opt-in controller diagnostics (TF_DIAGNOSTICS.md)
 - [x] reproduce/diagnose Nav2 future extrapolation from stale map/odom timestamps (`tf-02`)
 - [x] enable simulation-only `restamp_tf: true` as a single-variable experiment
-- [ ] validate restamping on Pi with the 600 s comparison in TF_DIAGNOSTICS.md
-- [ ] investigate separate simulated motor "not armed" errors later (outside TF fix)
+- [x] validate restamping comparison on Pi (`tf-03`: COMPLETE 549.97 s, zero MPPI code 102)
+- [ ] repeat before claiming general TF reliability; assess map integrity/coverage
+- [x] add bounded opt-in simulator timer/watchdog instrumentation
+- [ ] capture and diagnose control/watchdog timing and NOT_ARMED periods on Pi
+- [ ] examine recorded maps around NO_VALID_PATH failures and large SLAM corrections
 - [ ] add aligned offline truth-grid coverage analysis (see BENCHMARKING.md)
 - [ ] save a baseline result for `build_complex_world()`
 

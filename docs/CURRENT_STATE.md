@@ -170,7 +170,7 @@ Controller TF diagnostics are now opt-in via `benchmark_tf_diagnostics`; see
 `TF_DIAGNOSTICS.md` for source audit, hypotheses and a short Pi procedure.
 Exact action fields, attempt IDs, TF probes, rosout errors, evaluator timing
 and state transitions are recorded. Pi diagnostic runs captured the TF failure
-mechanism; the controlled simulation restamp experiment below remains unvalidated.
+mechanism; `tf-03` now provides the comparison validation below.
 
 Diagnostic-extension checks on macOS: `./scripts/test.sh all` passed 348 unit
 tests; all 6 ROS integration tests skipped (ROS unavailable). `git diff --check`
@@ -186,12 +186,38 @@ timestamps failed to advance quickly enough for execution-time lookups.
 runtime change. MPPI/costmap tolerances remain 0.3 s. See `TF_DIAGNOSTICS.md` for
 the evidence, rationale and exact 600 s Pi comparison procedure.
 
-Runtime validation of this simulation-only change is pending. It does not
-resolve the separate simulated motor "not armed" errors or establish physical
-validation. Exploration, TF ownership, speed limits and safety behavior are
+`tf-03` on `dc0db51` completed in 549.97 s with no MPPI code-102 aborts or
+MPPI goal-transform exceptions. The original map/odom future-extrapolation issue
+is provisionally resolved in simulation by restamping. This does not resolve
+other timing/control issues or establish physical validation. Exploration, TF ownership, speed limits and safety behavior are
 unchanged.
 
 Local checks for this configuration-only experiment: `./scripts/test.sh all`
 passed 348 unit tests; 6 ROS integration tests skipped (ROS unavailable).
 `git diff --check` passed. No new tests were added: there is no existing SLAM
 YAML parameter-test fixture; effective parameter checks are in the Pi procedure.
+
+
+## tf-03 remaining runtime concerns
+
+The comparison produced 18.31 m sampled travel, 7 accepted navigation requests,
+3 successes and 4 aborts: one action-server acknowledgement timeout (result code
+0, status ABORTED) and three code-208 NO_VALID_PATH results. Collision-monitor
+odom/base timing errors, simulated motor NOT_ARMED periods, planner failures,
+local-navigation stalls and map quality remain unresolved. Large map/odom
+corrections (up to 3.69 m translation) make coverage uncertain. COMPLETE obeyed
+the existing suppression-expiry/stability gates; it is not formal coverage
+acceptance. See `TF_DIAGNOSTICS.md` for the comparison evidence.
+
+Opt-in simulator control diagnostics now capture actual timer intervals/durations,
+command age, bridge/MCU state, deadlines/duties and event source timestamps in a
+bounded 1 Hz topic. Default is disabled; watchdog/TTL/re-arm behavior is unchanged.
+See `SIM_DIAGNOSTICS.md` for the next Pi capture including `/map` and commands.
+Pi validation/overhead measurement of this extension remains pending.
+
+Instrumentation checks on macOS: `./scripts/test.sh all` passed 357 unit tests;
+7 ROS integration tests skipped because ROS/built packages are unavailable.
+`git diff --check` passed. New tests cover timing windows, event bounds, deadline
+observation before late-frame refresh, observer-error isolation, unchanged wire
+responses and no automatic re-arm. The new simulator topic smoke test still
+requires Jazzy/Pi. Local unit success is not runtime/physical acceptance.

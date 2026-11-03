@@ -13,6 +13,8 @@ The control path intentionally includes the existing mock Uno controller:
 
 from dataclasses import replace
 import math
+import json
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -26,6 +28,7 @@ from geometry_msgs.msg import (
 )
 from nav_msgs.msg import Odometry, Path
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -36,6 +39,7 @@ from lidar_robot.kinematics import Twist
 from lidar_robot.mock_lidar import MockLidar, Pose2D
 from lidar_robot.mock_mcu import MockMotorController
 from lidar_robot.simulator import Simulator2D
+from lidar_robot.sim_diagnostics import SimulatorDiagnostics
 from lidar_robot.transport import LoopbackTransport
 
 from .worlds import build_complex_world
@@ -50,6 +54,12 @@ class MockRobotNode(Node):
     def __init__(self):
         super().__init__("mock_robot")
 
+        self.declare_parameter("control_diagnostics", False)
+        self._diagnostics = (SimulatorDiagnostics()
+                             if self.get_parameter("control_diagnostics").value else None)
+        self._diagnostic_decision = None
+        self._diagnostic_publication = 0
+        self._diagnostic_record_errors = 0
         self.declare_parameter("config_path", "")
         self.declare_parameter("pose_x", 1.0)
         self.declare_parameter("pose_y", 2.0)
@@ -85,7 +95,9 @@ class MockRobotNode(Node):
 
         # ----- simulated Elegoo Uno R3 control path -----------------------------
         self._mono_clock = SystemClock()
-        self._mcu = MockMotorController.from_config(sim_cfg, self._mono_clock)
+        self._mcu = MockMotorController.from_config(
+            sim_cfg, self._mono_clock,
+            observer=self._on_mcu_event if self._diagnostics is not None else None)
         self._transport = LoopbackTransport(self._mcu)
         self._bridge = MotorBridge(self._transport, sim_cfg, self._mono_clock)
 
@@ -141,19 +153,23 @@ class MockRobotNode(Node):
         self._last_physics_ms = now_ms
         self._last_path_ms = now_ms
 
+        if self._diagnostics is not None:
+            self._diagnostic_pub = self.create_publisher(String, "/sim/control_diagnostics", 10)
+            self._diagnostic_timer = self.create_timer(1.0, self._publish_diagnostics)
+
         # Simulation physics: 50 Hz
-        self._physics_timer = self.create_timer(0.02, self._physics_tick)
+        self._physics_timer = self.create_timer(0.02, self._timed("physics", self._physics_tick))
 
         # Pi -> Uno command scheduling: matches config, currently 10 Hz.
         self._control_timer = self.create_timer(
             sim_cfg.limits.cmd_period_ms / 1000.0,
-            self._control_tick,
+            self._timed("control", self._control_tick),
         )
 
         # LiDAR rate from config, currently 10 Hz.
         self._scan_timer = self.create_timer(
             1.0 / sim_cfg.lidar.scan_hz,
-            self._scan_tick,
+            self._timed("scan", self._scan_tick),
         )
 
         self._marker_timer = self.create_timer(0.5, self._publish_markers)
@@ -165,6 +181,66 @@ class MockRobotNode(Node):
             "Dynamic simulator ready: /cmd_vel -> simulated Uno -> drivetrain -> "
             "/odom + /scan"
         )
+
+    def _timed(self, name, callback):
+        if self._diagnostics is None:
+            return callback
+        def observed():
+            diagnostics = self._diagnostics
+            if diagnostics is None:
+                return callback()
+            started = diagnostics.start(name, time.monotonic_ns())
+            try:
+                return callback()
+            finally:
+                diagnostics.finish(name, started, time.monotonic_ns())
+        return observed
+
+    def _diagnostic_context(self):
+        now = self._mono_clock.now_ms()
+        return {"cmd_age_ms": None if self._latest_cmd_ms is None else now - self._latest_cmd_ms,
+                "cmd_received_ms": self._latest_cmd_ms,
+                "linear_mps": self._latest_cmd.linear, "angular_rps": self._latest_cmd.angular,
+                "motion_session_active": self._motion_session_active,
+                "bridge_state": self._bridge.mcu_state}
+
+    def _record_diagnostic(self, event, **fields):
+        if self._diagnostics is not None:
+            try:
+                self._diagnostics.event({"event": event, "monotonic_ms": self._mono_clock.now_ms(),
+                                         "ros_ns": self.get_clock().now().nanoseconds,
+                                         **self._diagnostic_context(),
+                                         "mcu": self._mcu.diagnostic_state(), **fields})
+            except Exception:
+                # In particular, observations must not prevent the fail-safe STOP.
+                self._diagnostic_record_errors += 1
+
+    def _on_mcu_event(self, event):
+        # Called synchronously at the state transition, before any later frame
+        # can refresh the link. Store in memory; publish only from the 1 Hz timer.
+        if self._diagnostics is not None:
+            self._diagnostics.event({"ros_ns": self.get_clock().now().nanoseconds,
+                                     **self._diagnostic_context(), **event})
+
+    def _publish_diagnostics(self):
+        if self._diagnostics is None:
+            return
+        try:
+            self._diagnostic_publication += 1
+            msg = String()
+            msg.data = json.dumps({"schema_version": 1,
+                "publication_id": self._diagnostic_publication,
+                "record_errors": self._diagnostic_record_errors,
+                "link_timeout_ms": self._cfg.limits.link_timeout_ms,
+                "command_ttl_ms": self._cfg.limits.cmd_ttl_ms,
+                "ros_ns": self.get_clock().now().nanoseconds,
+                "monotonic_ms": self._mono_clock.now_ms(),
+                **self._diagnostic_context(), "mcu": self._mcu.diagnostic_state(),
+                **self._diagnostics.drain()}, allow_nan=False)
+            self._diagnostic_pub.publish(msg)
+        except Exception as exc:
+            self.get_logger().error(f"Simulator diagnostics disabled: {exc}")
+            self._diagnostics = None
 
     def _on_cmd_vel(self, msg):
         self._latest_cmd = Twist(
@@ -185,6 +261,12 @@ class MockRobotNode(Node):
             abs(self._latest_cmd.linear) > 1e-9
             or abs(self._latest_cmd.angular) > 1e-9
         )
+
+        if self._diagnostics is not None:
+            decision = "drive" if fresh and motion_requested else "fresh_zero_stop" if fresh else "stale_stop"
+            if decision != self._diagnostic_decision:
+                self._record_diagnostic("control_decision", decision=decision, decision_monotonic_ms=now)
+                self._diagnostic_decision = decision
 
         try:
             # Each explicit motion session begins with ARM.  A fresh zero Twist
@@ -222,6 +304,7 @@ class MockRobotNode(Node):
                 self._bridge.stop()
 
         except Exception as exc:
+            self._record_diagnostic("host_error", error=str(exc))
             self._bridge.stop()
             self.get_logger().error(f"drive command failed safely: {exc}")
 

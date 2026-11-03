@@ -148,3 +148,10 @@ Outputs belong under ignored `data/benchmarks/`; do not commit generated logs.
 See `TF_DIAGNOSTICS.md` for the unchanged-stack source audit, diagnostic option,
 180 s trial procedure, provenance commands and interpretation limits. Rebuild
 `robot_explorer` after pulling the diagnostic extension.
+
+## Simulator watchdog and map-quality investigation
+
+Follow `SIM_DIAGNOSTICS.md` for exact Pi build/run/copy-back commands. Enable
+`sim_nav.launch.py control_diagnostics:=true`; record `/sim/control_diagnostics`
+with `/cmd_vel`, `/collision_monitor_state`, `/map` and the existing TF/sensor/
+plan/rosout topics. The default launch keeps these diagnostics disabled.

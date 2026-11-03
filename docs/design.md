@@ -198,3 +198,9 @@ Focused controller TF diagnosis is separately opt-in and read-only: zero-wait
 probes of the explorer's TF buffer plus Nav2 rosout/path observations. It never
 gates action requests or changes TF/control settings; see `TF_DIAGNOSTICS.md`
 for why observer-side availability must be correlated with controller errors.
+
+Simulator control diagnosis uses bounded in-memory timing windows and MCU
+transition events, drained to an opt-in 1 Hz topic. Events are captured inside
+the existing watchdog/command operations; no extra protocol polls, threads or
+safety decisions are introduced. See `SIM_DIAGNOSTICS.md` for state timing and
+map-quality capture limitations.
