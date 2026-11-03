@@ -31,13 +31,15 @@ This file is the active backlog. Completed historical software milestones are su
 ## Next software task: benchmark exploration
 
 Before changing the frontier policy:
-- [ ] log total exploration time
-- [ ] log simulated path length
-- [ ] count navigation goals
-- [ ] count failed goals
-- [ ] count suppressed/retried goals
-- [ ] record completion result
+- [x] log total exploration time
+- [x] log simulated path length
+- [x] count navigation goals
+- [x] count failed goals
+- [x] count suppressed/retried goals
+- [x] record completion result
 - [ ] compute or record accessible-area coverage where practical
+- [ ] verify recorder on ROS 2 Jazzy/Pi and measure overhead
+- [ ] add aligned offline truth-grid coverage analysis (see BENCHMARKING.md)
 - [ ] save a baseline result for `build_complex_world()`
 
 ## Exploration tuning

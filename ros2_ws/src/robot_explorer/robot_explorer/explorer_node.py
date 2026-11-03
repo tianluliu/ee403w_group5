@@ -31,7 +31,8 @@ from rclpy.time import Time
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point, PoseStamped
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
-from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
+from lidar_robot.benchmark import BenchmarkLog
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
@@ -66,6 +67,9 @@ class ExplorerNode(Node):
         super().__init__("explorer")
 
         self.declare_parameter("autonomous", False)
+        self.declare_parameter("benchmark_path", "")
+        self.declare_parameter("benchmark_label", "")
+        self._benchmark = None
 
         self.declare_parameter("clearance_m", 0.18)
         self.declare_parameter("min_cluster_size", 5)
@@ -214,6 +218,19 @@ class ExplorerNode(Node):
         self._completion_count = 0
         self._last_known_count = None
 
+        benchmark_path = self.get_parameter("benchmark_path").value
+        if benchmark_path:
+            if not self._autonomous:
+                raise ValueError("benchmark_path requires autonomous:=true")
+            metadata = {name: self.get_parameter(name).value for name in (
+                "clearance_m", "min_cluster_size", "standoff_m", "information_radius_m",
+                "decision_period_s", "persistence_checks", "candidate_tolerance_m",
+                "settle_time_s", "failure_suppression_s", "suppression_radius_m",
+                "completion_checks", "completion_max_known_growth_cells", "benchmark_label")}
+            self._benchmark = BenchmarkLog(benchmark_path, time.monotonic(), metadata)
+            self._benchmark_odom = self.create_subscription(
+                Odometry, "/odom", self._on_benchmark_odom, 100)
+
         self._timer = self.create_timer(
             decision_period_s,
             self._evaluate,
@@ -225,6 +242,36 @@ class ExplorerNode(Node):
             f"Explorer ready in {mode} mode; "
             "waiting for /map and map->base_link TF"
         )
+
+    def _observe(self, name, **fields):
+        if self._benchmark is None:
+            return
+        try:
+            self._benchmark.event(name, time.monotonic(), **fields)
+        except Exception as exc:
+            self.get_logger().error(f"Benchmark recording failed: {exc}")
+            try:
+                self._benchmark.stream.close()
+            except OSError:
+                pass
+            self._benchmark = None
+
+    def _on_benchmark_odom(self, msg):
+        if self._benchmark is not None:
+            stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            self._benchmark.metrics.odometry(
+                msg.pose.pose.position.x, msg.pose.pose.position.y, stamp)
+
+    def finish_benchmark(self, outcome):
+        if self._benchmark is not None:
+            self._observe(outcome)
+            if self._benchmark is not None:
+                try:
+                    self._benchmark.close(time.monotonic(), self._state)
+                except Exception as exc:
+                    self.get_logger().error(f"Benchmark summary failed: {exc}")
+                finally:
+                    self._benchmark = None
 
     def _on_map(self, msg: OccupancyGrid) -> None:
         self._map = msg
@@ -400,6 +447,9 @@ class ExplorerNode(Node):
             )
             return
 
+        if self._benchmark is not None and self._benchmark.metrics.started is None:
+            self._observe("ready")
+
         clusters = find_frontier_clusters(
             grid,
             robot_cell,
@@ -429,6 +479,11 @@ class ExplorerNode(Node):
 
             if not self._is_suppressed(pose):
                 usable.append((item, pose))
+            else:
+                self._observe("suppressed_skip")
+
+        self._observe("evaluation", clusters=len(clusters), usable=len(usable),
+                      known_cells=known_count, state=self._state)
 
         self._publish_markers(
             msg,
@@ -473,6 +528,8 @@ class ExplorerNode(Node):
             self._candidate_pose = pose
             self._candidate_count += 1
         else:
+            if self._candidate_pose is not None:
+                self._observe("candidate_replacement")
             self._candidate_pose = pose
             self._candidate_count = 1
 
@@ -484,6 +541,7 @@ class ExplorerNode(Node):
         if self._candidate_count < self._persistence_checks:
             return
 
+        self._observe("latched", x=pose.pose.position.x, y=pose.pose.position.y)
         self._latched_goal = copy.deepcopy(pose)
         self._reset_candidate()
 
@@ -574,6 +632,7 @@ class ExplorerNode(Node):
             return
 
         self._state = self.COMPLETE
+        self.finish_benchmark("complete")
 
         complete = Bool()
         complete.data = True
@@ -610,6 +669,7 @@ class ExplorerNode(Node):
             "Validating frontier with Nav2 planner"
         )
 
+        self._observe("planner_request")
         future = self._path_client.send_goal_async(
             request
         )
@@ -646,6 +706,7 @@ class ExplorerNode(Node):
             )
             return
 
+        self._observe("planner_result", status=wrapped.status)
         path = wrapped.result.path
 
         if (
@@ -690,6 +751,7 @@ class ExplorerNode(Node):
             f"{request.pose.pose.position.y:.2f})"
         )
 
+        self._observe("navigation_request")
         future = self._nav_client.send_goal_async(
             request
         )
@@ -712,6 +774,7 @@ class ExplorerNode(Node):
             )
             return
 
+        self._observe("navigation_accepted")
         self.get_logger().info(
             "Autonomous navigation goal accepted"
         )
@@ -730,6 +793,7 @@ class ExplorerNode(Node):
             )
             return
 
+        self._observe("navigation_result", status=wrapped.status)
         if wrapped.status == GoalStatus.STATUS_SUCCEEDED:
             if self._latched_goal is not None:
                 x = self._latched_goal.pose.position.x
@@ -761,6 +825,7 @@ class ExplorerNode(Node):
         )
 
     def _fail_latched_goal(self, reason: str) -> None:
+        self._observe("failure", reason=reason, phase=self._state)
         self.get_logger().warning(
             f"Frontier goal failed: {reason}"
         )
@@ -769,6 +834,8 @@ class ExplorerNode(Node):
             x = self._latched_goal.pose.position.x
             y = self._latched_goal.pose.position.y
 
+            self._observe("suppression", x=x, y=y,
+                          expires=time.monotonic() + self._failure_suppression_s)
             self._suppressed.append(
                 (
                     x,
@@ -879,11 +946,16 @@ def main(args=None) -> None:
 
     node = ExplorerNode()
 
+    outcome = "interrupted"
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception:
+        outcome = "error"
+        raise
     finally:
+        node.finish_benchmark(outcome)
         node.destroy_node()
 
         if rclpy.ok():

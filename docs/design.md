@@ -186,3 +186,10 @@ Formal acceptance criteria remain unclaimed until `test_procedures.md` is execut
 - exploration efficiency needs tuning
 - planar LiDAR cannot detect obstacles outside its scan plane
 - final CPU/memory/runtime margin must be measured under physical workload
+
+## Observational benchmarking
+
+The explorer optionally writes JSONL through the ROS-independent
+`lidar_robot.benchmark` accumulator and subscribes to `/odom` only when enabled.
+No additional control or TF publisher is introduced. See `BENCHMARKING.md` for
+definitions, provenance requirements and deferred offline coverage analysis.

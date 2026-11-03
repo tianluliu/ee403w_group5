@@ -147,3 +147,14 @@ Then tune exploration and compare against the baseline.
 ## Demo-only work
 
 A local RF2O handheld-LiDAR workspace may exist under `~/handheld_lidar_demo`. It is not part of the production architecture unless explicitly adopted.
+
+## Benchmark instrumentation
+
+Opt-in explorer JSONL logging now records timing, sampled odometry distance,
+action outcomes, suppression/retry events and completion. See `BENCHMARKING.md`.
+Coverage alignment, Pi runtime verification and measured baseline trials remain
+pending; no exploration policy or physical validation status changed.
+
+Branch verification: `./scripts/test.sh all` on macOS passed 341 unit tests;
+all 5 ROS integration tests skipped because ROS packages are unavailable.
+`git diff --check` passed. These results do not establish ROS runtime validity.

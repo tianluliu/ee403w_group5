@@ -136,3 +136,9 @@ git push -u origin <purpose-branch>
 ```
 
 Avoid `git add .` when generated or third-party files may be present.
+
+## Record exploration benchmarks
+
+Use the normal build and full simulation above, then follow `BENCHMARKING.md`
+for the opt-in explorer command, fresh-trial protocol and output interpretation.
+Outputs belong under ignored `data/benchmarks/`; do not commit generated logs.

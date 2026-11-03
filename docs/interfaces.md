@@ -215,3 +215,11 @@ Before final physical integration, measure/confirm:
 - LiDAR x/y/z/yaw mount
 - motor output speed/calibration
 - encoder availability/details
+
+## Optional benchmark output
+
+Explorer parameters `benchmark_path` (default empty/disabled) and
+`benchmark_label` (default empty) select exclusive-create JSONL output and trial
+provenance. Recording requires `autonomous=true` and adds a `/odom` subscription
+(depth 100). No topic/action/TF publishers change. Schema version 1 and metric
+semantics are defined in `BENCHMARKING.md`.

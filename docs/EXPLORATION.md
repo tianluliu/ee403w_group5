@@ -184,3 +184,10 @@ Potential tuning areas:
 - path-cost estimation
 
 Do not sacrifice doorway correctness, clearance, or completion correctness for speed.
+
+## Benchmark hooks
+
+Optional observational hooks record readiness, evaluations, candidate replacement,
+latching, planner/navigation requests and results, failures, suppression and
+completion. Existing scoring, persistence, suppression and completion decisions
+are unchanged. See `BENCHMARKING.md` for metric definitions and limitations.
