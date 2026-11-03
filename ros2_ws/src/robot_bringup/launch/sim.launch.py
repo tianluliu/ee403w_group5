@@ -1,8 +1,9 @@
-"""Dynamic 2D robot simulation.
+"""Standalone dynamic 2D robot simulation without SLAM.
 
-Unlike mock.launch.py, odom -> base_link is dynamic and owned by mock_robot_node.
-map -> odom is temporarily identity for visualization. When SLAM Toolbox is added,
-SLAM will become the sole owner of map -> odom.
+odom -> base_link is dynamic and owned by mock_robot_node. Because this launch
+profile intentionally omits SLAM, it publishes a simulation-only identity
+map -> odom for visualization. sim_slam.launch.py and sim_nav.launch.py instead
+let SLAM Toolbox be the sole owner of map -> odom.
 """
 
 import os
@@ -46,8 +47,8 @@ def generate_launch_description():
             }],
         ),
 
-        # Temporary simulation-only map -> odom identity.
-        # Remove this publisher once SLAM Toolbox owns map -> odom.
+        # Standalone-simulation-only map -> odom identity.
+        # SLAM launch profiles do not include this publisher.
         Node(
             package="tf2_ros",
             executable="static_transform_publisher",

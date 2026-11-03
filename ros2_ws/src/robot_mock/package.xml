@@ -4,8 +4,8 @@
   <name>robot_mock</name>
   <version>0.1.0</version>
   <description>
-    Mock LaserScan publisher for testing the ROS graph without hardware. Refuses any
-    configuration that is not marked mock. UNVERIFIED: never built or run in a ROS 2 environment.
+    Dynamic ROS 2 simulation package for the LiDAR mapping robot, including simulated
+    drivetrain motion, odometry, TF, LaserScan data, world markers, and path visualization.
   </description>
   <maintainer email="team@example.invalid">LiDAR Robot Team</maintainer>
   <license>TODO: team to choose a license</license>

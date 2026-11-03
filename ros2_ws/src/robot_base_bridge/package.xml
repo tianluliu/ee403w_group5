@@ -4,8 +4,8 @@
   <name>robot_base_bridge</name>
   <version>0.1.0</version>
   <description>
-    Phase 1 skeleton: heartbeat node only. The /cmd_vel to serial bridge node is a Phase 2
-    task (needs approval). UNVERIFIED: never built or run in a ROS 2 environment.
+    Base-side ROS support package. It currently provides the heartbeat node; the real
+    /cmd_vel-to-Arduino serial bridge remains a physical-integration task.
   </description>
   <maintainer email="team@example.invalid">LiDAR Robot Team</maintainer>
   <license>TODO: team to choose a license</license>

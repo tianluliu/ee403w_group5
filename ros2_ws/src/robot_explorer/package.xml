@@ -3,7 +3,10 @@
 <package format="3">
   <name>robot_explorer</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>
+    Frontier-based autonomous exploration supervisor using the SLAM occupancy map and
+    Nav2 path-validation/navigation actions.
+  </description>
   <maintainer email="bkorpiel@icloud.com">robot</maintainer>
   <license>TODO: License declaration</license>
 

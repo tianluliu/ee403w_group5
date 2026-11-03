@@ -1,11 +1,12 @@
 # Current Project State
 
-Last documented baseline: `d0dce8b` (`Add autonomous frontier exploration`).
+Software baseline: `d0dce8b` (`Add autonomous frontier exploration`).
 
-This is the current engineering-status summary. Older Phase 1 documents remain useful for requirements and early design intent, but some of their status statements are outdated.
+This document summarizes what the repository currently does and what remains for physical integration.
 
 ## Executive summary
-The repository now supports a complete autonomous simulation pipeline:
+
+The Raspberry Pi can run a complete autonomous simulation pipeline:
 
 ```text
 dynamic robot simulation
@@ -19,12 +20,13 @@ dynamic robot simulation
 The physical drivetrain is not yet integrated.
 
 ## Exercised on Raspberry Pi
+
 - ROS 2 Jazzy package builds.
 - Dynamic differential-drive simulation.
 - Simulated Arduino safety/control path.
 - Moving `/scan`.
 - Dynamic `/odom`.
-- Simulated TF.
+- Simulated TF chain.
 - SLAM Toolbox online mapping.
 - Nav2 planning/navigation.
 - Consecutive Nav2 goals.
@@ -34,80 +36,114 @@ The physical drivetrain is not yet integrated.
 - Failed-goal suppression.
 - Stable exploration-completion detection.
 - Foxglove visualization.
-- 334 passing unit tests at baseline.
+- Live RPLIDAR C1 scans.
+- 334 passing unit tests at the documented software baseline.
 
-The real RPLIDAR C1 has also produced live `/scan` data. This is not equivalent to final robot integration.
+## Not yet verified on the final physical robot
 
-## Pending physical integration
 - Arduino firmware.
-- Real serial transport.
+- Real Pi-to-Arduino serial transport.
 - MDD10A control from the real Uno.
 - Motor direction/duty calibration.
-- Final dimensions/footprint.
-- Final LiDAR mount transform.
+- Final chassis dimensions and footprint.
+- Final LiDAR mounting transform.
 - Physical odometry source.
-- Full physical TF chain.
+- Full physical `map -> odom -> base_link -> laser` chain.
 - Full autonomous hardware run.
-- 90% accessible-area coverage acceptance test.
-- obstacle-clearance test.
-- 30-minute runtime test.
-- final automatic-stop test.
+- Formal 90% coverage acceptance test.
+- Formal obstacle-clearance acceptance test.
+- 30-minute battery runtime test.
+- Formal automatic-stop acceptance test.
 
 ## Major components
 
 ### Pure Python core
-`src/lidar_robot/`
-- protocol/config/kinematics
-- bridge/transport/mock MCU
-- world/mock LiDAR
-- simulator
-- exploration
 
-### ROS 2
+`src/lidar_robot/`
+
+Important modules:
+- `protocol.py`
+- `config.py`
+- `kinematics.py`
+- `bridge.py`
+- `transport.py`
+- `mock_mcu.py`
+- `world.py`
+- `mock_lidar.py`
+- `simulator.py`
+- `exploration.py`
+
+### ROS 2 workspace
+
 `ros2_ws/src/`
+
+Important packages:
 - `robot_base_bridge`
 - `robot_mock`
 - `robot_bringup`
 - `robot_explorer`
 
 ### Configuration
-- `config/robot.toml` — real values, unknowns stay unset
-- `config/robot.mock.toml` — simulation-only
+
+- `config/robot.toml` — real hardware values; unknowns remain unset
+- `config/robot.mock.toml` — simulation-only values
 - `config/slam_toolbox_sim.yaml`
 - `config/nav2_sim.yaml`
 
 ## Complex world
-Current simulator uses `build_complex_world()`.
 
-The 8x6 m world contains a central obstacle, a sealed room, a reachable room with a 0.8 m doorway, partial walls creating occlusion, and a freestanding wall.
+The current simulator uses `build_complex_world()`.
 
-The sealed room is a deliberate test: unknown space behind a continuous wall may remain unknown without blocking completion. The room with a doorway must remain explorable.
+The 8 m x 6 m world contains:
+1. a central obstacle
+2. a sealed room whose interior should remain unknown but unreachable
+3. a reachable room with a 0.8 m doorway
+4. partial walls creating occluded but reachable regions
+5. a freestanding wall
+
+This environment is intentionally designed to catch bad exploration assumptions.
 
 ## Current exploration state
+
 The explorer:
 - reads `/map`
 - finds/ranks reachable frontiers
 - waits for candidate persistence
-- validates using `ComputePathToPose`
+- validates with `ComputePathToPose`
 - sends `NavigateToPose`
-- waits for result
-- lets SLAM settle
+- waits for navigation result
+- lets the map settle
 - suppresses failed areas temporarily
 - publishes completion when no persistent reachable frontier remains and known map area is stable
 
 Known weakness: larger-world exploration can be slow and indecisive.
 
 ## Recommended next software task
+
 Add objective benchmark logging before tuning:
 - completion time
 - path length
 - number of goals
-- failures
+- failed goals
 - suppressed/retried goals
 - coverage
 - final reachable unknown area
 
 Then tune exploration and compare against the baseline.
 
+## Physical integration priority
+
+1. confirm exact motors and encoder availability
+2. choose physical odometry source
+3. implement Arduino firmware
+4. implement real serial transport
+5. calibrate geometry and drivetrain
+6. wheels-up safety test
+7. low-speed physical motion test
+8. integrate real LiDAR + odometry + SLAM
+9. integrate Nav2
+10. integrate explorer
+
 ## Demo-only work
+
 A local RF2O handheld-LiDAR workspace may exist under `~/handheld_lidar_demo`. It is not part of the production architecture unless explicitly adopted.

@@ -3,26 +3,35 @@
 This project is being worked on through more than one AI-assisted workflow. Important engineering context must live in the repository, not only in chat history.
 
 ## Read order
+
 1. `AGENTS.md`
 2. `README.md`
 3. `docs/CURRENT_STATE.md`
-4. `docs/EXPLORATION.md`
-5. `docs/RUNBOOK.md`
-6. task-specific code/tests
-7. `docs/requirements.md` for requirements
-8. `docs/interfaces.md` for interfaces
+4. `docs/design.md`
+5. `docs/interfaces.md`
+6. `docs/EXPLORATION.md`
+7. `docs/RUNBOOK.md`
+8. `docs/tasks.md`
+9. task-specific code/tests
+10. `docs/requirements.md` for scope/acceptance work
 
 ## Source-of-truth priority
-For current implementation/status:
+
+For implementation behavior:
 1. current code/tests
 2. `docs/CURRENT_STATE.md`
 3. focused current docs
 4. README
-5. older Phase 1 status docs
 
-PDR-derived requirements are not superseded by status docs unless the team explicitly changes scope.
+For formal project requirements:
+1. PDR/project brief
+2. `docs/requirements.md`
+3. ratified team decisions recorded in the repository
+
+If code and documentation disagree, identify the mismatch rather than guessing.
 
 ## Handoff template
+
 ```text
 Branch:
 Commit:
@@ -50,21 +59,21 @@ Next recommended step:
 ```
 
 ## Agent rules
+
 - Do not invent hardware measurements.
 - Do not claim physical validation from simulation.
 - Do not silently change PDR requirements.
 - Preserve safety gates unless explicitly changing them.
 - Run tests before calling work complete.
 - Add/update tests for algorithm changes.
-- Keep demo-only experiments separate.
-- Do not commit credentials, build output, generated maps/bags/logs, or local IP assumptions.
+- Keep demo-only experiments separate from production architecture.
+- Do not commit credentials, build output, generated maps/bags/logs, or local connection settings.
 - Avoid unrelated refactors during focused tuning.
 - Label findings as observed, simulated, inferred, or physically measured.
 
-## Recommended next task
-Benchmark the existing complex-world exploration before tuning it.
+## Current best next software task
 
-Collect:
+Benchmark the existing complex-world exploration before tuning:
 - completion time
 - distance traveled
 - number of goals
@@ -73,9 +82,10 @@ Collect:
 - coverage
 - completion result
 
-Then tune and compare.
+Then tune and compare against the baseline.
 
 ## Later hardware integration
+
 1. confirm exact motor/encoder details
 2. choose physical odometry source
 3. implement Arduino firmware

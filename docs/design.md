@@ -1,161 +1,188 @@
 # Design
 
-Status: DRAFT for team confirmation. Phase 1. Sections marked **(exists)** are implemented and
-unit-tested on the Mac; everything marked **(planned)** has not been built or run.
+Status: current engineering design for the software baseline through `d0dce8b`. Physical drivetrain integration and formal acceptance testing are still pending.
 
 ## 1. Scope
 
-This design realizes the PDR (see requirements.md) without changing it. It adds the one thing the
-PDR block diagram leaves out, the Arduino, as an explicit proposal for team confirmation (PDR-1).
+The system is a battery-powered differential-drive robot that uses a 2D LiDAR to explore and map an unknown flat indoor environment, avoid stationary obstacles, and stop when exploration is complete.
 
-## 2. Proposed system architecture (planned, needs confirmation: HQ-01)
+The repository does **not** implement SLAM or low-level navigation from scratch. It uses SLAM Toolbox and Nav2. The repository does contain a custom frontier-based exploration policy that decides which reachable unexplored region Nav2 should visit next.
 
-PDR slide 6 draws Pi -> MDD10A directly. Slides 3 and 9 name the Arduino Uno as the motor
-controller. Proposed wiring of responsibilities:
+## 2. System architecture
 
-```
- Power
-   12 V battery ──► [fuse + kill switch]* ──► MDD10A ──► left motor
-        │                                        └─────► right motor
-        └──► 5 V regulator ──► Raspberry Pi 4 (4 GB)
+Expected physical architecture:
 
- Signals
-   RPLIDAR C1 ──USB──► Raspberry Pi 4 ──USB serial (protocol v1)──► Arduino Uno
-   Arduino Uno ──PWM + DIR (logic level), common GND──► MDD10A
+```text
+12 V battery
+  -> motor power path -> Cytron MDD10A -> left/right motors
+  -> regulated 5 V -> Raspberry Pi 4
 
- * not in the PDR; recommended (HQ-08)
+RPLIDAR C1 -> USB -> Raspberry Pi 4
+Raspberry Pi 4 -> USB serial -> Arduino Uno
+Arduino Uno -> PWM/DIR -> Cytron MDD10A
 ```
 
-The Pi never drives the MDD10A directly and never powers motors. The Uno's own supply is an open
-question (HQ-06).
+Responsibilities:
 
-## 3. Responsibilities
+| Unit | Responsibilities |
+|---|---|
+| Raspberry Pi 4 | ROS 2, LiDAR, SLAM Toolbox, Nav2, exploration, map/status output, future serial bridge |
+| Arduino Uno | motor protocol, duty/TTL/link safety, MDD10A PWM/DIR, optional encoder reporting |
+| Development computer | editing, Git, documentation, remote Foxglove visualization, optional unit tests |
 
-| Unit | Does | Does not |
+Exact physical wiring, final dimensions, motor calibration, and physical odometry remain unresolved.
+
+## 3. Current software stack
+
+| Layer | Choice | Current status |
 |---|---|---|
-| Raspberry Pi 4 | LiDAR acquisition, ROS 2 graph, SLAM, Nav2, exploration supervision, map saving, experiment logging, serial bridge to the Arduino | drive motor power, run RViz/Gazebo or a desktop |
-| Arduino Uno | Parse protocol v1, enforce duty cap, command TTL and link timeout, drive MDD10A PWM/DIR, encoder counting only if encoders exist | SLAM, navigation, any decision about where to go |
-| MacBook Air | Editing, Git, documentation, platform-independent unit tests, SSH deployment, log and map inspection, remote visualization client | run the robot stack; ROS 2 is not assumed on macOS |
+| OS | Ubuntu Server 24.04 ARM64 | installed and used on Pi |
+| ROS | ROS 2 Jazzy | installed and used |
+| LiDAR | Slamtec `sllidar_ros2`, RPLIDAR C1 | live `/scan` demonstrated |
+| Simulation | custom deterministic 2D simulator | implemented/exercised |
+| SLAM | SLAM Toolbox | integrated/exercised in simulation |
+| Navigation | Nav2 | integrated/exercised in simulation |
+| Exploration | custom frontier-based explorer | integrated/exercised in simulation |
+| Visualization | Foxglove bridge/client | used |
+| Physical odometry | pending hardware decision | not integrated |
+| Physical motor bridge | protocol/model exists; firmware/real transport pending | not integrated |
 
-## 4. Software stack (planned; each item to be verified in its phase)
+## 4. Simulation architecture
 
-| Layer | Choice | Status |
-|---|---|---|
-| OS | Ubuntu 24.04 Server ARM64 on the Pi | preferred, unverified on this unit (HQ-11) |
-| ROS | ROS 2 Jazzy | preferred, unverified on this unit |
-| LiDAR driver | `sllidar_ros2` (Slamtec); its README lists the C1 and ships a C1 launch file | Jazzy build unverified (HQ-13) |
-| SLAM | SLAM Toolbox, online asynchronous mode, 0.05 m resolution | not run |
-| Navigation | Nav2, with its collision monitor in front of `/cmd_vel` | not run |
-| Exploration | an existing frontier package (candidate `explore_lite`) plus a thin supervisor for the start trigger, termination, timeouts, map save and logs | Jazzy build unverified (HQ-15) |
-| Odometry | see section 7 | undecided (HQ-02) |
-
-No SLAM, mapping or navigation algorithm is written in this repository. The Pi 4 with 4 GB is
-a tight fit for SLAM plus Nav2; CPU and memory headroom must be measured in Phase 3 and 4.
-
-## 5. Command path and safety layers
-
-```
-Nav2 planner/controller ─► velocity smoother ─► collision monitor ─► /cmd_vel
-   ─► bridge node ─► [serial, protocol v1] ─► Arduino ─► MDD10A ─► motors
-```
-
-| Layer | Defends against | Status |
-|---|---|---|
-| Hardware kill switch + fuse | hung software, stuck motor, short | proposed, not in PDR (HQ-08) |
-| Arduino link timeout | Pi crash or hang, USB cable unplugged | modelled and tested in the mock; firmware not written |
-| Arduino command TTL | stalled bridge, stale command | modelled and tested in the mock |
-| Arduino duty cap, range checks | host bug, corrupt value | modelled and tested in the mock |
-| Boot DISARMED, ARM required | accidental motion at reset | modelled and tested in the mock |
-| Host `motors_enabled` gate | running tests against hardware by accident | **(exists)** `MotorBridge` refuses `arm`/`send_twist` before writing any byte; default `false` |
-| Host fail-safe STOP | a bad value or lost reply on the drive path | **(exists)** `MotorBridge.send_twist` sends STOP, then re-raises |
-| Mock-config refusal | invented dimensions driving a real robot | **(exists)** `MotorBridge` rejects a mock config on a non-simulated transport |
-| Kinematics limits and duty cap | commanding more than the bring-up envelope | **(exists)** `kinematics.twist_to_drive` |
-| Config completeness check | firmware/launch from guessed numbers | **(exists)** `RobotConfig.require_complete` |
-| Collision monitor (scan-based) | obstacles that Nav2 misjudges | planned (Phase 4) |
-
-Fail-safe rule used everywhere: if a value is missing, non-finite, out of range or stale, the
-answer is "stop", never "use a default".
-
-## 6. Configuration design (exists)
-
-- `config/robot.toml` is the single source of hardware values. Unknown values are omitted.
-- `config/robot.mock.toml` has invented values and `[meta] mock = true`. `require_complete` refuses
-  it for every hardware-dependent scope; the library never loads it by name.
-- Scopes: `sim`, `navigation`, `odometry`, `firmware`. `encoders.present` must be `yes` or `no`
-  (not `unknown`) before `firmware` or `odometry` scopes pass.
-- TOML is read with the standard library (`tomllib`, Python 3.11+), so the same file works on the
-  Mac (3.14 here) and the Pi (3.12 on Ubuntu 24.04). ROS parameter YAML will be generated from it
-  in a later task and is not hand-maintained in parallel.
-
-## 7. Odometry strategy (decision pending: HQ-02)
-
-| Option | When | Trade-off |
-|---|---|---|
-| A. Wheel encoders in the bridge node (diff-drive odometry) | motors have encoders, or the team approves adding them | best short-term accuracy; needs Arduino counting and a protocol extension |
-| B. Laser odometry from `/scan` (candidate: an existing ROS 2 laser-odometry package) | no encoders | no extra hardware; quality depends on scene structure; ROS 2 Jazzy availability unverified |
-| C. Open-loop dead reckoning from commanded duty | fallback only | unreliable under load and slip; if used at all, publish with large covariance |
-
-The software must work with no encoders. The mock MCU advertises encoders through the HELLO
-`caps` byte (`0x01`); the real answer comes from hardware inspection.
-
-## 8. Mac to Raspberry Pi workflow (scripts planned; commands below work today)
-
-1. Edit and test on the Mac. No ROS, Docker or extra packages are needed:
-   `python3 -m unittest discover -s tests/unit -t tests/unit`
-2. Sync the repository to the Pi over SSH with `rsync` (planned `scripts/deploy.sh`, dry-run by
-   default).
-3. Run the same unit tests on the Pi to catch Ubuntu/ARM64 differences, then ROS 2 integration tests
-   there (planned `scripts/remote.sh`).
-4. Visualize from the Mac without installing ROS: a WebSocket bridge on the Pi (candidate:
-   `foxglove_bridge`) viewed in a Mac app through an SSH tunnel. Unverified; decided in Phase 3.
-5. Docker is **not** used: nothing in Phase 1 needs it, and ROS 2 integration is tested on the real
-   target (the Pi) instead.
-
-Nothing in this workflow touches hardware until a task explicitly says so and is approved.
-
-## 9. Repository layout
-
-Exists:
-
-```
-config/                  robot.toml, robot.mock.toml
-src/lidar_robot/         clock, config, protocol, kinematics, transport, bridge, mock_mcu,
-                         world, mock_lidar, frames, metrics            (stdlib only)
-tests/unit/              platform-independent tests (unittest)
-tests/ros2_integration/  ROS 2 tests: UNVERIFIED, skipped without rclpy
-ros2_ws/src/             ROS 2 Jazzy skeletons, never built or run (below)
-scripts/                 test.sh, check_env.sh, deploy.sh, remote.sh
-docs/                    this folder
+```text
+robot_explorer
+ -> Nav2
+ -> /cmd_vel
+ -> robot_mock/mock_robot_node
+ -> MotorBridge
+ -> LoopbackTransport
+ -> MockMotorController
+ -> wheel duty
+ -> Simulator2D
+ -> /odom + /scan + TF
+ -> SLAM Toolbox
+ -> /map
 ```
 
-Not created: `firmware/` (specification only until approved).
+The simulator intentionally exercises the same host-side command/safety abstractions intended for hardware.
 
-| ROS package | State | Role |
-|---|---|---|
-| `robot_base_bridge` | skeleton, heartbeat node only | will host the `/cmd_vel` to serial bridge node in Phase 2 |
-| `robot_mock` | skeleton, mock `/scan` node (mock configs only) | exercise the ROS graph without hardware |
-| `robot_bringup` | `heartbeat.launch.py`, `mock.launch.py`; no hardware launch file | launch files; the hardware profile arrives in Phase 2 |
-| `robot_description` | planned | static `base_link -> laser` from `robot.toml` |
-| `robot_exploration` | planned | start trigger, termination criterion, timeouts, map save, logging |
+## 5. TF ownership
 
-The ROS nodes are thin by design. They contain no motor-command path (a unit test checks this
-statically); the logic they will call lives in `lidar_robot`, which is tested on the Mac.
+Required chain:
 
-## 10. Test strategy
+```text
+map -> odom -> base_link -> laser
+```
 
-| Level | Where | Contents | Status |
-|---|---|---|---|
-| Platform-independent unit | Mac and Pi | protocol, config, kinematics, mock MCU, bridge, world, mock LiDAR, TF validator, coverage metric, static ROS package structure, script safety | 307 tests, passing on the Mac; not yet run on the Pi |
-| ROS 2 integration | Pi only | mock-LaserScan publisher, heartbeat, refusal of real config | written, **UNVERIFIED** (never run; skipped on the Mac) |
-| Hardware, wheels elevated | Pi + robot | bridge, watchdog stop, LiDAR scan check | Phase 2, needs approval |
-| System | Pi + robot | coverage, obstacle, termination, runtime | Phases 3-6 |
+Simulation with SLAM:
 
-## 11. Risks
+| Edge | Owner |
+|---|---|
+| `map -> odom` | SLAM Toolbox |
+| `odom -> base_link` | `mock_robot_node` |
+| `base_link -> laser` | `mock_robot_node` static broadcaster |
 
-- Hardware questions HQ-01 to HQ-08 gate Phase 2. The Gantt shows CDR on 3-Nov.
-- No encoders would make odometry the main technical risk.
-- Pi 4 (4 GB) CPU and memory under SLAM Toolbox plus Nav2 is unmeasured.
-- Jazzy compatibility of the LiDAR driver and the exploration package is unverified.
-- A planar LiDAR misses obstacles that do not cross its scan plane; this limits R-05 and must be
-  stated in the demo scope.
-- Open-loop speed (duty to m/s) depends on load and battery voltage; calibrate in Phase 2.
+`sim.launch.py` intentionally has no SLAM and publishes a simulation-only identity `map -> odom` for visualization.
+
+Physical deployment keeps the same frame names but replaces simulation publishers with measured hardware/odometry sources.
+
+Exactly one publisher must own each TF edge.
+
+## 6. Command path and safety
+
+Intended physical path:
+
+```text
+Nav2
+ -> velocity smoother
+ -> collision monitor
+ -> /cmd_vel
+ -> Pi bridge
+ -> serial protocol v1
+ -> Arduino Uno
+ -> MDD10A
+ -> motors
+```
+
+Implemented safety behavior in the core/mock path:
+- motors disabled by default in real configuration
+- mock MCU boots DISARMED
+- explicit ARM before motion
+- command TTL
+- link timeout
+- independent duty cap
+- fail-safe STOP
+- mock config rejected for non-simulated transport
+- hardware-dependent configuration must pass `RobotConfig.require_complete(scope)`
+- stale simulated commands stop motion
+- no silent re-arm after watchdog failure during the same simulated motion session
+
+Physical firmware must reproduce the serial/watchdog semantics in `interfaces.md`.
+
+A physical kill switch/fuse remains a hardware requirement/open item.
+
+## 7. Configuration
+
+- `config/robot.toml`: real robot values; unknown values stay unset.
+- `config/robot.mock.toml`: simulation-only values with `[meta] mock = true`.
+- `config/slam_toolbox_sim.yaml`: simulation SLAM.
+- `config/nav2_sim.yaml`: simulation Nav2.
+
+Never copy mock dimensions or drive constants into the physical profile.
+
+## 8. Physical odometry strategy
+
+Preferred order:
+1. wheel encoders if the installed motors provide them
+2. an approved alternative such as laser odometry if encoders are unavailable
+3. open-loop duty dead reckoning only as a fallback
+
+The handheld RF2O experiment is demo-only unless explicitly adopted.
+
+## 9. Exploration design
+
+Custom frontier exploration lives in `src/lidar_robot/exploration.py`; ROS orchestration lives in `robot_explorer/explorer_node.py`.
+
+```text
+/map
+ -> reachable frontier detection
+ -> clustering/filtering
+ -> safe frontier goal
+ -> information-gain/path-distance ranking
+ -> persistence
+ -> Nav2 path validation
+ -> NavigateToPose
+ -> settle/repeat
+ -> stable completion
+```
+
+Current score:
+
+```text
+score = information_gain_cells / (path_distance_m + 0.25)
+```
+
+See `EXPLORATION.md`.
+
+## 10. Verification status
+
+At the documented software baseline:
+- 334 unit tests pass
+- dynamic simulation has run on the Pi
+- SLAM Toolbox has run with the simulator
+- Nav2 has driven repeated goals
+- autonomous frontier exploration has run in the complex world
+- RPLIDAR C1 has produced live scans
+- full physical drivetrain/autonomous validation has **not** been completed
+
+Formal acceptance criteria remain unclaimed until `test_procedures.md` is executed and recorded.
+
+## 11. Current technical risks
+
+- physical odometry source unresolved
+- exact motor/encoder details and chassis geometry unresolved
+- Arduino firmware and real serial transport missing
+- physical power/wiring/kill-switch details need verification
+- exploration efficiency needs tuning
+- planar LiDAR cannot detect obstacles outside its scan plane
+- final CPU/memory/runtime margin must be measured under physical workload

@@ -4,8 +4,8 @@
   <name>robot_bringup</name>
   <version>0.1.0</version>
   <description>
-    Launch files. Phase 1 has the mock graph and the heartbeat only; there is deliberately no
-    hardware launch file yet. UNVERIFIED: never built or launched in a ROS 2 environment.
+    ROS 2 launch files for standalone simulation, SLAM Toolbox simulation mapping,
+    and Nav2 simulation navigation. A final physical-hardware launch profile is still pending.
   </description>
   <maintainer email="team@example.invalid">LiDAR Robot Team</maintainer>
   <license>TODO: team to choose a license</license>
