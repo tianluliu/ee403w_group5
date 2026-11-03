@@ -169,9 +169,29 @@ not a formal completed baseline. Recorder overhead remains unmeasured.
 Controller TF diagnostics are now opt-in via `benchmark_tf_diagnostics`; see
 `TF_DIAGNOSTICS.md` for source audit, hypotheses and a short Pi procedure.
 Exact action fields, attempt IDs, TF probes, rosout errors, evaluator timing
-and state transitions are recorded. Pi validation of this extension and the
-root cause remain pending. No TF/control/policy parameters changed.
+and state transitions are recorded. Pi diagnostic runs captured the TF failure
+mechanism; the controlled simulation restamp experiment below remains unvalidated.
 
 Diagnostic-extension checks on macOS: `./scripts/test.sh all` passed 348 unit
 tests; all 6 ROS integration tests skipped (ROS unavailable). `git diff --check`
 passed. The new ROS diagnostic wiring smoke test remains pending on Jazzy/Pi.
+
+
+## Controlled simulation TF timestamp experiment
+
+`tf-02` on `576cfcb` reproduced four terminal code-102 navigation aborts;
+raw TF and controller logs establish future extrapolation because `map -> odom`
+timestamps failed to advance quickly enough for execution-time lookups.
+`config/slam_toolbox_sim.yaml` now explicitly sets `restamp_tf: true` as the only
+runtime change. MPPI/costmap tolerances remain 0.3 s. See `TF_DIAGNOSTICS.md` for
+the evidence, rationale and exact 600 s Pi comparison procedure.
+
+Runtime validation of this simulation-only change is pending. It does not
+resolve the separate simulated motor "not armed" errors or establish physical
+validation. Exploration, TF ownership, speed limits and safety behavior are
+unchanged.
+
+Local checks for this configuration-only experiment: `./scripts/test.sh all`
+passed 348 unit tests; 6 ROS integration tests skipped (ROS unavailable).
+`git diff --check` passed. No new tests were added: there is no existing SLAM
+YAML parameter-test fixture; effective parameter checks are in the Pi procedure.

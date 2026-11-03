@@ -30,6 +30,7 @@ slam_toolbox:
     scan_queue_size: 1
 
     # TF
+    restamp_tf: true
     transform_publish_period: 0.02
     transform_timeout: 0.2
     tf_buffer_duration: 30.0

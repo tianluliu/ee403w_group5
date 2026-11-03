@@ -41,7 +41,10 @@ Before changing the frontier policy:
 - [x] exercise recorder on ROS 2 Jazzy/Pi (exploratory interrupted run)
 - [ ] measure recorder/evaluator overhead
 - [x] audit TF source/configuration and add opt-in controller diagnostics (TF_DIAGNOSTICS.md)
-- [ ] reproduce/diagnose repeated Nav2 TF-error aborts on Pi before scoring changes
+- [x] reproduce/diagnose Nav2 future extrapolation from stale map/odom timestamps (`tf-02`)
+- [x] enable simulation-only `restamp_tf: true` as a single-variable experiment
+- [ ] validate restamping on Pi with the 600 s comparison in TF_DIAGNOSTICS.md
+- [ ] investigate separate simulated motor "not armed" errors later (outside TF fix)
 - [ ] add aligned offline truth-grid coverage analysis (see BENCHMARKING.md)
 - [ ] save a baseline result for `build_complex_world()`
 

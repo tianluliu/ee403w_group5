@@ -1,6 +1,6 @@
 # Controller TF diagnostic run
 
-## Source audit and hypotheses
+## Source audit before the controlled fix
 
 The current `sim_nav` includes `sim_slam`, not standalone `sim` or `mock`:
 SLAM owns `map -> odom`; `mock_robot_node` owns dynamic `odom -> base_link`
@@ -41,7 +41,7 @@ Sources:
 - [Controller TF exception sites](https://github.com/ros-navigation/navigation2/blob/jazzy/nav2_controller/src/controller_server.cpp)
 - [MPPI path timestamp handling](https://github.com/ros-navigation/navigation2/blob/jazzy/nav2_mppi_controller/src/path_handler.cpp)
 
-Ranked hypotheses (none established yet):
+Initial hypotheses before `tf-02` (see confirmed mechanism below):
 1. Missing `map -> odom` timestamp coverage at controller robot/path timestamps,
    even though a latest/common-time lookup and standalone planning succeed.
 2. Simulator/TF reception delays or CPU starvation cause stale robot transforms.
@@ -152,4 +152,144 @@ Evidence that distinguishes the causes:
 
 Tests here cover serialization, failed-vs-latest lookups, static/future stamps,
 state observation and completion guards. The optional ROS smoke test exercises
-timer/subscription/output wiring. Pi reproduction and root cause remain pending.
+timer/subscription/output wiring. The `tf-02` reproduction identifies the
+timestamp failure below; validation of the controlled fix remains pending.
+
+
+## tf-02 evidence and single-variable restamp experiment
+
+The predefined 600 s follow-up used unchanged commit `576cfcb`, Nav2 controller/
+MPPI 1.3.13 and SLAM Toolbox 2.8.5. Artifacts are ignored under
+`data/benchmarks/tf-02*`. The JSONL contains four terminal navigation aborts with
+code 102 (attempts 4--7), code/message fields `102`/empty string. Console and
+bagged rosout identify six MPPI goal-to-costmap transform exceptions: attempt 3
+recovered, attempts 4--6 aborted, and attempt 7 encountered two exceptions before
+aborting. All are future extrapolation from `map` to `odom` at robot-pose
+execution timestamps, not missing frames or old exploration-goal timestamps.
+
+| Attempt | Requested ROS time | Latest map/odom TF time | First covering TF receipt after request |
+|---|---|---|---|
+| 3 (recovered) | 1793745089.486026 | 1793745089.447247 | 0.510 s |
+| 4 | 1793745101.048666 | 1793745101.007151 | 0.466 s |
+| 5 | 1793745112.443648 | 1793745112.405277 | 0.344 s |
+| 6 | 1793745189.690554 | 1793745189.621387 | 0.597 s |
+| 7 | 1793745221.819196 | 1793745221.800695 | 0.400 s |
+| 7 | 1793745230.781191 | 1793745230.755916 | 0.616 s |
+
+Raw bag receipts corroborate each controller-reported stale horizon; these are
+not just explorer-buffer observations. Odometry/base TF contains the requested
+robot timestamps. Map/odom broadcast continues near 50 Hz but repeats an old
+scan-derived timestamp; for attempt 4 the same timestamp repeats 34 times over
+about 0.655 s. Covering data arrives after MPPI's 0.3 s lookup deadline. SLAM
+scan-filter drops and irregular sensor timing support callback/processing delay,
+but the capture does not isolate its exact CPU/executor/filter contribution.
+All captured `use_sim_time` settings are false; no raw dynamic stamp backsteps
+or conflicting active TF edge ownership were established.
+
+The only runtime change being tested is `restamp_tf: true` in
+`config/slam_toolbox_sim.yaml`. Effective `tf-02` parameters had it false, so the
+old horizon was last callback scan time + 0.2 s. With this option, SLAM Toolbox
+stamps its latest map/odom correction at current ROS time + the unchanged 0.2 s
+transform_timeout, decoupling TF timestamp advancement from scan callbacks.
+See the [installed-version source](https://github.com/SteveMacenski/slam_toolbox/blob/2.8.5/src/slam_toolbox_common.cpp).
+This simulation-only experiment targets that demonstrated timestamp horizon;
+it does not make delayed SLAM processing fresh or establish physical validity.
+
+MPPI and local/global costmap transform tolerances intentionally remain 0.3 s.
+All exploration parameters, speed limits, completion semantics, TF owners and
+motor/safety behavior remain unchanged. Separately observed simulated motor
+"not armed" errors remain unresolved and outside this experiment.
+
+### Exact Pi verification procedure (runtime validation pending)
+
+Transfer this commit using the normal team workflow, then check its SHA on the
+Pi. Stop previous simulation/Nav2/explorer/bag processes and use one fresh stack,
+no prior map and the same visualization/load conditions as `tf-02`. Do not run
+standalone `sim`/`mock` alongside `sim_nav`. Use new output names below; never
+overwrite prior evidence. Declare the 600 s exploration limit before starting.
+
+Terminal 1:
+
+```bash
+cd ~/ee403w_group5
+git branch --show-current
+git rev-parse HEAD
+source /opt/ros/jazzy/setup.bash
+export LIDAR_ROBOT_ROOT="$PWD"
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+cd ros2_ws
+colcon build --packages-select robot_mock robot_explorer robot_bringup --symlink-install
+source install/setup.bash
+cd ..
+mkdir -p data/benchmarks
+ros2 launch robot_bringup sim_nav.launch.py 2>&1 | tee data/benchmarks/tf-03-nav2-console.log
+```
+
+Terminal 2 (after stack activation, before exploration):
+
+```bash
+cd ~/ee403w_group5
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+ros2 param get /slam_toolbox restamp_tf
+ros2 param get /controller_server FollowPath.transform_tolerance
+ros2 param get /local_costmap/local_costmap transform_tolerance
+ros2 param get /global_costmap/global_costmap transform_tolerance
+ros2 param dump /slam_toolbox > data/benchmarks/tf-03-slam-params.yaml
+ros2 param dump /controller_server > data/benchmarks/tf-03-controller-params.yaml
+ros2 node list > data/benchmarks/tf-03-nodes.txt
+ros2 topic info /tf --verbose > data/benchmarks/tf-03-tf-publishers.txt
+ros2 topic info /tf_static --verbose > data/benchmarks/tf-03-tf-static-publishers.txt
+ros2 bag record -o data/benchmarks/tf-03-bag /tf /tf_static /odom /scan /plan /rosout
+```
+
+The parameter reads must return true and 0.3/0.3/0.3 respectively. Do not run the
+comparison if the effective values differ.
+
+Terminal 3:
+
+```bash
+cd ~/ee403w_group5
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+./scripts/test.sh all
+git diff --check
+ros2 topic echo /rosout > data/benchmarks/tf-03-rosout.txt
+```
+
+Terminal 4:
+
+```bash
+cd ~/ee403w_group5
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+timeout --signal=INT --kill-after=10s 600s ros2 run robot_explorer explorer_node --ros-args \
+  -p autonomous:=true \
+  -p benchmark_path:="$PWD/data/benchmarks/tf-03.jsonl" \
+  -p benchmark_label:="tf-03 commit=$(git rev-parse --short HEAD) machine=lidarbot limit=600s restamp=true" \
+  -p benchmark_tf_diagnostics:=true
+```
+
+Timeout status 124 is expected at the limit. If exploration completes sooner,
+stop the run and record completion. At the limit/early completion, stop the
+simulation/Nav2 launch with Ctrl-C as well: explorer shutdown alone does not
+cancel an active Nav2 goal. Then Ctrl-C the bag recorder and rosout capture to
+flush artifacts. A forced kill or missing summary must be reported explicitly.
+
+Compare against `tf-02` using action errors, console exceptions and raw TF:
+
+- Map/odom timestamps should advance near broadcast rate even when scan callbacks
+  pause, with signed age near -0.2 s absent transport/scheduling delay.
+- There should be no recurring MPPI goal-to-costmap future-extrapolation/code-102
+  failures from the demonstrated horizon. Check internal recovered exceptions
+  as well as terminal navigation outcomes.
+- Verify scan/map alignment visually in fixed frame `map`, including moving
+  scans against walls, and retain the bag for timestamp/transform checks.
+- Report navigation results, map progress, interruptions and separate motor
+  errors. Zero TF errors with stalled motion is not proof of exploration success.
+
+One successful comparison is initial runtime evidence, not full acceptance.
+Repeat before claiming reliability; keep sealed-room/doorway and safety tests
+passing. Do not tune other variables during this experiment.
