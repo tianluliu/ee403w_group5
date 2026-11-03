@@ -142,3 +142,9 @@ Avoid `git add .` when generated or third-party files may be present.
 Use the normal build and full simulation above, then follow `BENCHMARKING.md`
 for the opt-in explorer command, fresh-trial protocol and output interpretation.
 Outputs belong under ignored `data/benchmarks/`; do not commit generated logs.
+
+## Diagnose Nav2 controller TF failures
+
+See `TF_DIAGNOSTICS.md` for the unchanged-stack source audit, diagnostic option,
+180 s trial procedure, provenance commands and interpretation limits. Rebuild
+`robot_explorer` after pulling the diagnostic extension.

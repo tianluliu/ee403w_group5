@@ -223,3 +223,8 @@ Explorer parameters `benchmark_path` (default empty/disabled) and
 provenance. Recording requires `autonomous=true` and adds a `/odom` subscription
 (depth 100). No topic/action/TF publishers change. Schema version 1 and metric
 semantics are defined in `BENCHMARKING.md`.
+
+Optional `benchmark_tf_diagnostics=false` enables read-only TF probes and
+`/plan` (`nav_msgs/Path`, depth 1) / `/rosout` (`rcl_interfaces/Log`, depth 100)
+subscriptions when benchmark output is configured. Additive JSONL fields and
+events are defined in `TF_DIAGNOSTICS.md`; no ROS publishers or TF owners change.

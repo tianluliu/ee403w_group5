@@ -26,6 +26,7 @@ PACKAGES = (
 
 ALLOWED_THIRD_PARTY = {
     "rclpy",
+    "rcl_interfaces",
     "std_msgs",
     "sensor_msgs",
     "geometry_msgs",

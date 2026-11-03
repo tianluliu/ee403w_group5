@@ -165,3 +165,13 @@ passed; `git diff --check` passed; `robot_explorer`, `robot_mock`, and
 594.079 s measured exploration time. See `BENCHMARK_DIAGNOSTIC_01.md` for the
 observed navigation/TF failure and retry loop; this is exploratory evidence,
 not a formal completed baseline. Recorder overhead remains unmeasured.
+
+Controller TF diagnostics are now opt-in via `benchmark_tf_diagnostics`; see
+`TF_DIAGNOSTICS.md` for source audit, hypotheses and a short Pi procedure.
+Exact action fields, attempt IDs, TF probes, rosout errors, evaluator timing
+and state transitions are recorded. Pi validation of this extension and the
+root cause remain pending. No TF/control/policy parameters changed.
+
+Diagnostic-extension checks on macOS: `./scripts/test.sh all` passed 348 unit
+tests; all 6 ROS integration tests skipped (ROS unavailable). `git diff --check`
+passed. The new ROS diagnostic wiring smoke test remains pending on Jazzy/Pi.

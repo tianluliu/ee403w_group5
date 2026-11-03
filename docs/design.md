@@ -193,3 +193,8 @@ The explorer optionally writes JSONL through the ROS-independent
 `lidar_robot.benchmark` accumulator and subscribes to `/odom` only when enabled.
 No additional control or TF publisher is introduced. See `BENCHMARKING.md` for
 definitions, provenance requirements and deferred offline coverage analysis.
+
+Focused controller TF diagnosis is separately opt-in and read-only: zero-wait
+probes of the explorer's TF buffer plus Nav2 rosout/path observations. It never
+gates action requests or changes TF/control settings; see `TF_DIAGNOSTICS.md`
+for why observer-side availability must be correlated with controller errors.

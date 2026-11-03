@@ -40,7 +40,8 @@ Before changing the frontier policy:
 - [ ] compute or record accessible-area coverage where practical
 - [x] exercise recorder on ROS 2 Jazzy/Pi (exploratory interrupted run)
 - [ ] measure recorder/evaluator overhead
-- [ ] diagnose repeated Nav2 TF-error aborts before scoring changes (BENCHMARK_DIAGNOSTIC_01.md)
+- [x] audit TF source/configuration and add opt-in controller diagnostics (TF_DIAGNOSTICS.md)
+- [ ] reproduce/diagnose repeated Nav2 TF-error aborts on Pi before scoring changes
 - [ ] add aligned offline truth-grid coverage analysis (see BENCHMARKING.md)
 - [ ] save a baseline result for `build_complex_world()`
 

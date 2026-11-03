@@ -80,3 +80,10 @@ room remains reachable. Report known-free coverage, accessible unknown area and
 incorrectly occupied accessible area separately. Keep this calculation outside
 the policy loop. Existing coverage classification thresholds differ from the
 explorer's; document them rather than silently changing either implementation.
+
+## Controller TF diagnostics
+
+Set `benchmark_tf_diagnostics:=true` only for focused diagnosis. See
+`TF_DIAGNOSTICS.md` for additive event fields, nonblocking probe semantics and
+the short-run protocol. Action result events now preserve exact error code and
+message (null if absent) in ordinary benchmark mode as well.

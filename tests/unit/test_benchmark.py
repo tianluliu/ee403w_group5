@@ -72,14 +72,15 @@ class SupervisorObservationTests(unittest.TestCase):
         path = REPO_ROOT / 'ros2_ws/src/robot_explorer/robot_explorer/explorer_node.py'
         tree = ast.parse(path.read_text())
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))
-        selected = {"_handle_no_usable_frontiers", "_observe", "finish_benchmark"}
+        selected = {"_handle_no_usable_frontiers", "_observe", "finish_benchmark", "_set_state", "_evaluate_timed"}
         cls.body = [n for n in cls.body if isinstance(n, ast.Assign)
                     or isinstance(n, ast.FunctionDef) and n.name in selected]
         cls.bases = []
         module = ast.Module(body=[ast.ImportFrom(module='__future__',
                             names=[ast.alias(name='annotations')], level=0), cls], type_ignores=[])
         ast.fix_missing_locations(module)
-        namespace = {"time": time, "Bool": SimpleNamespace}
+        import math
+        namespace = {"time": time, "math": math, "Bool": SimpleNamespace}
         exec(compile(module, str(path), 'exec'), namespace)
         node = namespace['ExplorerNode']()
         node._benchmark = None
@@ -130,3 +131,30 @@ class SupervisorObservationTests(unittest.TestCase):
         node._benchmark.stream.close.side_effect = OSError('disk full')
         node._observe('evaluation')
         self.assertIsNone(node._benchmark)
+
+    def test_state_observation_preserves_transition_and_ignores_same_state(self):
+        from unittest.mock import Mock
+        node = self.node()
+        node._tf_diagnostics = True
+        node._observe = Mock()
+        node._set_state('VALIDATING', 'planner_request')
+        self.assertEqual(node._state, 'VALIDATING')
+        node._observe.assert_called_once_with('state_transition', previous='SEARCHING',
+                                             state='VALIDATING', reason='planner_request')
+        node._set_state('VALIDATING', 'same')
+        self.assertEqual(node._observe.call_count, 1)
+
+    def test_evaluator_timing_observes_overrun_without_hiding_failure(self):
+        from unittest.mock import Mock, patch
+        node = self.node()
+        node._decision_period_s = 1.
+        node._evaluate_due = 9.
+        node._last_evaluate_start = 7.
+        node._observe = Mock()
+        node._evaluate = Mock(side_effect=RuntimeError("original failure"))
+        with patch('time.monotonic', side_effect=[10., 12.]):
+            with self.assertRaisesRegex(RuntimeError, 'original failure'):
+                node._evaluate_timed()
+        node._observe.assert_called_once_with('evaluator_timing', duration_s=2.,
+                                             estimated_lateness_s=1., interval_s=3., state='SEARCHING')
+        self.assertEqual(node._evaluate_due, 11.)

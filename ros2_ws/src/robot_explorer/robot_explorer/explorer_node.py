@@ -31,7 +31,9 @@ from rclpy.time import Time
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point, PoseStamped
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from rcl_interfaces.msg import Log
+from .tf_diagnostics import pose_fields, result_fields, stamp_ns, tf_snapshot
 from lidar_robot.benchmark import BenchmarkLog
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformListener
@@ -70,6 +72,11 @@ class ExplorerNode(Node):
         self.declare_parameter("benchmark_path", "")
         self.declare_parameter("benchmark_label", "")
         self._benchmark = None
+        self.declare_parameter("benchmark_tf_diagnostics", False)
+        self._tf_diagnostics = bool(self.get_parameter("benchmark_tf_diagnostics").value)
+        self._attempt_id = 0
+        self._diagnostic_odom_stamp = None
+        self._diagnostic_plan = None
 
         self.declare_parameter("clearance_m", 0.18)
         self.declare_parameter("min_cluster_size", 5)
@@ -219,6 +226,8 @@ class ExplorerNode(Node):
         self._last_known_count = None
 
         benchmark_path = self.get_parameter("benchmark_path").value
+        if self._tf_diagnostics and not benchmark_path:
+            raise ValueError("benchmark_tf_diagnostics requires benchmark_path")
         if benchmark_path:
             if not self._autonomous:
                 raise ValueError("benchmark_path requires autonomous:=true")
@@ -226,14 +235,23 @@ class ExplorerNode(Node):
                 "clearance_m", "min_cluster_size", "standoff_m", "information_radius_m",
                 "decision_period_s", "persistence_checks", "candidate_tolerance_m",
                 "settle_time_s", "failure_suppression_s", "suppression_radius_m",
-                "completion_checks", "completion_max_known_growth_cells", "benchmark_label")}
+                "completion_checks", "completion_max_known_growth_cells", "benchmark_label",
+                "benchmark_tf_diagnostics", "use_sim_time")}
             self._benchmark = BenchmarkLog(benchmark_path, time.monotonic(), metadata)
             self._benchmark_odom = self.create_subscription(
                 Odometry, "/odom", self._on_benchmark_odom, 100)
 
+        if self._tf_diagnostics:
+            self._diagnostic_timer = self.create_timer(1.0, lambda: self._diagnostic_snapshot())
+            self._diagnostic_rosout = self.create_subscription(Log, "/rosout", self._on_diagnostic_log, 100)
+            self._diagnostic_path = self.create_subscription(Path, "/plan", self._on_diagnostic_plan, 1)
+            self._decision_period_s = decision_period_s
+            self._evaluate_due = time.monotonic() + decision_period_s
+            self._last_evaluate_start = None
+
         self._timer = self.create_timer(
             decision_period_s,
-            self._evaluate,
+            self._evaluate_timed if self._tf_diagnostics else self._evaluate,
         )
 
         mode = "AUTONOMOUS" if self._autonomous else "DRY-RUN"
@@ -247,6 +265,9 @@ class ExplorerNode(Node):
         if self._benchmark is None:
             return
         try:
+            if getattr(self, "_tf_diagnostics", False):
+                fields.setdefault("attempt_id", self._attempt_id)
+                fields.setdefault("ros_now_ns", self.get_clock().now().nanoseconds)
             self._benchmark.event(name, time.monotonic(), **fields)
         except Exception as exc:
             self.get_logger().error(f"Benchmark recording failed: {exc}")
@@ -256,8 +277,58 @@ class ExplorerNode(Node):
                 pass
             self._benchmark = None
 
+    def _set_state(self, state, reason):
+        previous = self._state
+        self._state = state
+        if getattr(self, "_tf_diagnostics", False) and previous != state:
+            self._observe("state_transition", previous=previous, state=state, reason=reason)
+
+    def _evaluate_timed(self):
+        started = time.monotonic()
+        due = self._evaluate_due
+        interval = None if self._last_evaluate_start is None else started - self._last_evaluate_start
+        self._last_evaluate_start = started
+        # Estimate the nominal periodic deadline, skipping elapsed periods.
+        self._evaluate_due += max(1, math.floor((started - due) / self._decision_period_s) + 1) * self._decision_period_s
+        try:
+            self._evaluate()
+        finally:
+            self._observe("evaluator_timing", duration_s=time.monotonic() - started,
+                          estimated_lateness_s=max(0.0, started - due), interval_s=interval,
+                          state=self._state)
+
+    def _on_diagnostic_plan(self, msg):
+        if msg.poses:
+            self._diagnostic_plan = {
+                "frame_id": msg.header.frame_id, "stamp_ns": stamp_ns(msg.header.stamp),
+                "endpoint_stamp_ns": stamp_ns(msg.poses[-1].header.stamp),
+                "received_ros_ns": self.get_clock().now().nanoseconds}
+
+    def _on_diagnostic_log(self, msg):
+        if msg.level >= 30 and any(name in msg.name for name in (
+                "controller_server", "bt_navigator", "slam_toolbox", "local_costmap", "global_costmap")):
+            self._observe("nav2_log", logger=msg.name, level=msg.level,
+                          source_stamp_ns=stamp_ns(msg.stamp), message=msg.msg)
+
+    def _diagnostic_snapshot(self, requested_stamp_ns=None, reason="periodic"):
+        if self._benchmark is None:
+            return
+        try:
+            now = self.get_clock().now()
+            def lookup(parent, child, when):
+                return self._tf_buffer.lookup_transform(
+                    parent, child, Time(nanoseconds=when, clock_type=now.clock_type))
+            snapshot = tf_snapshot(lookup, now.nanoseconds,
+                                   now.nanoseconds if requested_stamp_ns is None else requested_stamp_ns,
+                                   self._diagnostic_odom_stamp, self._diagnostic_plan)
+            self._observe("tf_snapshot", reason=reason, state=self._state, **snapshot)
+        except Exception as exc:
+            self._observe("diagnostic_error", error=str(exc))
+
     def _on_benchmark_odom(self, msg):
         if self._benchmark is not None:
+            if self._tf_diagnostics:
+                self._diagnostic_odom_stamp = stamp_ns(msg.header.stamp)
             stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
             self._benchmark.metrics.odometry(
                 msg.pose.pose.position.x, msg.pose.pose.position.y, stamp)
@@ -406,7 +477,7 @@ class ExplorerNode(Node):
             if time.monotonic() < self._resume_after:
                 return
 
-            self._state = self.SEARCHING
+            self._set_state(self.SEARCHING, "settle_elapsed")
             self.get_logger().info(
                 "Map settling period complete; searching again"
             )
@@ -541,6 +612,7 @@ class ExplorerNode(Node):
         if self._candidate_count < self._persistence_checks:
             return
 
+        self._attempt_id += 1
         self._observe("latched", x=pose.pose.position.x, y=pose.pose.position.y)
         self._latched_goal = copy.deepcopy(pose)
         self._reset_candidate()
@@ -631,7 +703,7 @@ class ExplorerNode(Node):
         if self._completion_count < self._completion_checks:
             return
 
-        self._state = self.COMPLETE
+        self._set_state(self.COMPLETE, "completion_checks_passed")
         self.finish_benchmark("complete")
 
         complete = Bool()
@@ -653,11 +725,12 @@ class ExplorerNode(Node):
             self.get_logger().warning(
                 "ComputePathToPose server is not ready"
             )
-            self._state = self.SETTLING
+            self._set_state(self.SETTLING, "planner_unavailable")
+            self._observe("planner_unavailable")
             self._resume_after = time.monotonic() + 1.0
             return
 
-        self._state = self.VALIDATING
+        self._set_state(self.VALIDATING, "planner_request")
 
         request = ComputePathToPose.Goal()
         request.goal = self._fresh_pose(
@@ -706,7 +779,7 @@ class ExplorerNode(Node):
             )
             return
 
-        self._observe("planner_result", status=wrapped.status)
+        self._observe("planner_result", status=wrapped.status, **result_fields(wrapped.result))
         path = wrapped.result.path
 
         if (
@@ -727,7 +800,7 @@ class ExplorerNode(Node):
 
     def _start_navigation(self) -> None:
         if self._latched_goal is None:
-            self._state = self.SEARCHING
+            self._set_state(self.SEARCHING, "no_latched_goal")
             return
 
         if not self._nav_client.wait_for_server(
@@ -743,7 +816,7 @@ class ExplorerNode(Node):
             self._latched_goal
         )
 
-        self._state = self.NAVIGATING
+        self._set_state(self.NAVIGATING, "navigation_request")
 
         self.get_logger().info(
             "Sending autonomous NavigateToPose goal "
@@ -751,6 +824,9 @@ class ExplorerNode(Node):
             f"{request.pose.pose.position.y:.2f})"
         )
 
+        if self._tf_diagnostics:
+            self._observe("navigation_start", goal=pose_fields(request.pose))
+            self._diagnostic_snapshot(stamp_ns(request.pose.header.stamp), reason="navigation_start")
         self._observe("navigation_request")
         future = self._nav_client.send_goal_async(
             request
@@ -793,7 +869,9 @@ class ExplorerNode(Node):
             )
             return
 
-        self._observe("navigation_result", status=wrapped.status)
+        self._observe("navigation_result", status=wrapped.status, **result_fields(wrapped.result))
+        if self._tf_diagnostics:
+            self._diagnostic_snapshot(reason="navigation_result")
         if wrapped.status == GoalStatus.STATUS_SUCCEEDED:
             if self._latched_goal is not None:
                 x = self._latched_goal.pose.position.x
@@ -805,7 +883,7 @@ class ExplorerNode(Node):
                 )
 
             self._latched_goal = None
-            self._state = self.SETTLING
+            self._set_state(self.SETTLING, "navigation_succeeded")
             self._resume_after = (
                 time.monotonic()
                 + self._settle_time_s
@@ -854,7 +932,7 @@ class ExplorerNode(Node):
         self._latched_goal = None
         self._reset_candidate()
 
-        self._state = self.SETTLING
+        self._set_state(self.SETTLING, "goal_failure")
         self._resume_after = (
             time.monotonic()
             + self._settle_time_s
