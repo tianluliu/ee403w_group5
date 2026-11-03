@@ -1,63 +1,152 @@
 # Autonomous LiDAR Mapping Robot
 
-Software foundation for the team's PDR project: a battery-powered, differential-drive robot
-(Raspberry Pi 4, RPLIDAR C1, Arduino Uno, Cytron MDD10A) that explores an unknown flat indoor
-room, builds a 2D map, avoids stationary obstacles and stops by itself.
+Penn State EE403W Group 5 software for a battery-powered differential-drive robot that autonomously explores an unknown flat indoor environment, builds a 2D LiDAR map, avoids stationary obstacles, and stops when exploration is complete.
 
-## Status: Phase 1 (software foundation). Nothing has run on hardware.
+Target hardware:
+- Raspberry Pi 4 (4 GB)
+- RPLIDAR C1
+- Arduino Uno
+- Cytron MDD10A
+- two 131:1 DC gearmotors
+- 12 V battery system
 
-- No acceptance criterion from the PDR has been tested. See `docs/requirements.md`.
-- The robot's real dimensions, motor details and wiring are **unknown** and left unset in
-  `config/robot.toml`; invented values live only in `config/robot.mock.toml`.
-- **Motors are disabled by default** (`safety.motors_enabled = false`), and the Arduino model
-  boots DISARMED. There is no serial-port code and no Arduino firmware yet.
-- ROS 2 packages exist as skeletons but are **UNVERIFIED**: they have never been built or run.
+## Current status
+Implemented and exercised on the Raspberry Pi:
+- dynamic differential-drive simulator
+- simulated Arduino safety/control path
+- moving `/scan` and `/odom`
+- SLAM Toolbox online mapping
+- Nav2 navigation/obstacle avoidance
+- custom frontier-based exploration
+- complex exploration world
+- autonomous goal validation/execution
+- conservative completion detection
+- Foxglove visualization
+- 334 passing unit tests at the documented baseline
 
-## Quick start (MacBook, no installs needed)
+The physical drivetrain is **not yet integrated**. Arduino firmware, real serial transport, calibrated drive/geometry values, physical odometry, and final hardware acceptance testing remain.
 
-```bash
-scripts/check_env.sh      # read-only: python3 >= 3.11, ssh, rsync present?
-scripts/test.sh           # platform-independent unit tests (stdlib only)
-scripts/test.sh -v        # verbose
-```
+See [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
 
-The same command works on the Pi (Ubuntu 24.04 ships Python 3.12). ROS 2 is not needed on the
-Mac. Mac-to-Pi deployment over SSH is described in `docs/dev_workflow.md`.
+## Agent / contributor start here
+AI coding agents and contributors should read [`AGENTS.md`](AGENTS.md) first.
 
-## Layout
-
-```
-config/            robot.toml (real, unknowns unset), robot.mock.toml (tests only)
-src/lidar_robot/   pure-Python core: protocol, config, kinematics, bridge, transport,
-                   mock MCU, mock LiDAR/world, TF validator, coverage metric
-tests/unit/        platform-independent tests (unittest; run on Mac and Pi)
-tests/ros2_integration/   ROS 2 tests: UNVERIFIED, skipped without rclpy
-ros2_ws/src/       ROS 2 Jazzy package skeletons: robot_base_bridge (heartbeat),
-                   robot_mock (mock /scan), robot_bringup (launch files)
-scripts/           test.sh, check_env.sh, deploy.sh, remote.sh
-docs/              requirements, design, tasks, interfaces, open questions,
-                   test procedures, dev workflow, future 3DGS note
-```
-
-## Documents
-
-| File | Contents |
+| File | Purpose |
 |---|---|
-| `docs/requirements.md` | PDR requirements, safety and software requirements, proposed acceptance definitions |
-| `docs/design.md` | architecture, safety layers, odometry options, workflow, risks |
-| `docs/tasks.md` | what is done and verified, what remains, approval gates |
-| `docs/interfaces.md` | ROS topics and TF chain, Pi to Arduino serial protocol v1, config interface |
-| `docs/open_questions.md` | hardware questions and PDR inconsistencies for the team |
-| `docs/test_procedures.md` | step-by-step acceptance test procedures (none executed yet) |
-| `docs/dev_workflow.md` | Mac to Pi SSH workflow, ROS 2 build and run notes |
-| `docs/future_3dgs.md` | design-only note for the optional 3D Gaussian Splatting extension |
+| [`AGENTS.md`](AGENTS.md) | Durable repository instructions |
+| [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) | Current implemented/pending status |
+| [`docs/EXPLORATION.md`](docs/EXPLORATION.md) | Frontier algorithm and state machine |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Build/run/Foxglove/test commands |
+| [`docs/AGENT_HANDOFF.md`](docs/AGENT_HANDOFF.md) | Cross-agent handoff format |
+| [`docs/requirements.md`](docs/requirements.md) | Project requirements/acceptance definitions |
+| [`docs/interfaces.md`](docs/interfaces.md) | ROS and serial interfaces |
 
-## Rules of the road
+Some older Phase 1 documents contain historical status statements. Use `docs/CURRENT_STATE.md` plus current code for present engineering status.
 
-- Do not connect to the Pi, flash the Arduino, install packages or power the motors without the
-  team's explicit approval for that step (`docs/tasks.md` marks these).
-- Hardware-dependent output (firmware constants, real launch parameters) must call
-  `RobotConfig.require_complete(scope)` first; it refuses mock configs and reports every missing
-  value instead of guessing.
-- First powered motion happens with the wheels off the ground, behind a hardware kill switch
-  (open question HQ-08).
+## Architecture
+```text
+frontier explorer
+ -> Nav2
+ -> /cmd_vel
+ -> dynamic simulator
+ -> /odom + /scan + TF
+ -> SLAM Toolbox
+ -> /map
+ -> explorer
+```
+
+Simulated motor path:
+```text
+/cmd_vel
+ -> MotorBridge
+ -> LoopbackTransport
+ -> MockMotorController
+ -> wheel duty
+ -> Simulator2D
+```
+
+## Exploration
+Core:
+```text
+src/lidar_robot/exploration.py
+```
+
+ROS supervisor:
+```text
+ros2_ws/src/robot_explorer/robot_explorer/explorer_node.py
+```
+
+Current ranking:
+```text
+score = information_gain_cells / (path_distance_m + 0.25)
+```
+
+See [`docs/EXPLORATION.md`](docs/EXPLORATION.md).
+
+## Run full simulation
+
+Terminal 1:
+```bash
+cd ~/ee403w_group5
+source ~/.bashrc
+source ros2_ws/install/setup.bash
+ros2 launch robot_bringup sim_nav.launch.py
+```
+
+Terminal 2:
+```bash
+cd ~/ee403w_group5
+source ~/.bashrc
+source ros2_ws/install/setup.bash
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+```
+
+Terminal 3:
+```bash
+cd ~/ee403w_group5
+source ~/.bashrc
+source ros2_ws/install/setup.bash
+ros2 run robot_explorer explorer_node --ros-args -p autonomous:=true
+```
+
+Foxglove fixed frame: `map`.
+
+Useful topics:
+```text
+/map
+/scan
+/sim/world
+/sim/path
+/exploration/markers
+/exploration/goal_preview
+```
+
+## Tests
+```bash
+cd ~/ee403w_group5
+./scripts/test.sh
+git diff --check
+```
+
+Documented baseline:
+```text
+Ran 334 tests
+OK
+```
+
+## Current next steps
+Software:
+1. benchmark complex-world exploration
+2. improve speed/decisiveness
+3. compare tuning against objective metrics
+
+Hardware:
+1. confirm drivetrain/encoder details
+2. establish physical odometry
+3. implement Arduino firmware
+4. implement real serial transport
+5. calibrate geometry/drive constants
+6. integrate and validate physical robot
+
+## Demo-only experiments
+Handheld LiDAR/RF2O experiments are separate from the production architecture unless intentionally adopted.
