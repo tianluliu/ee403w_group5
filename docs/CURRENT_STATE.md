@@ -152,9 +152,16 @@ A local RF2O handheld-LiDAR workspace may exist under `~/handheld_lidar_demo`. I
 
 Opt-in explorer JSONL logging now records timing, sampled odometry distance,
 action outcomes, suppression/retry events and completion. See `BENCHMARKING.md`.
-Coverage alignment, Pi runtime verification and measured baseline trials remain
-pending; no exploration policy or physical validation status changed.
+Coverage alignment and formal completed baseline trials remain pending; no
+exploration policy or physical validation status changed.
 
 Branch verification: `./scripts/test.sh all` on macOS passed 341 unit tests;
 all 5 ROS integration tests skipped because ROS packages are unavailable.
 `git diff --check` passed. These results do not establish ROS runtime validity.
+
+User-reported Pi verification: 341 unit tests and all 5 ROS integration tests
+passed; `git diff --check` passed; `robot_explorer`, `robot_mock`, and
+`robot_bringup` built with colcon. The first recorder run was interrupted after
+594.079 s measured exploration time. See `BENCHMARK_DIAGNOSTIC_01.md` for the
+observed navigation/TF failure and retry loop; this is exploratory evidence,
+not a formal completed baseline. Recorder overhead remains unmeasured.

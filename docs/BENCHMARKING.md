@@ -1,8 +1,9 @@
 # Exploration benchmarking
 
 The optional recorder observes the existing explorer; it does not change ranking,
-parameters, completion gates, TF ownership, or motor safety. Runtime validation on
-ROS 2 Jazzy/Pi is pending. No measured complex-world baseline is claimed yet.
+parameters, completion gates, TF ownership, or motor safety. The first Pi run
+produced an exploratory interrupted diagnostic (`BENCHMARK_DIAGNOSTIC_01.md`).
+No formal completed complex-world baseline is claimed yet.
 
 ## Run protocol
 

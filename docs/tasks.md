@@ -38,7 +38,9 @@ Before changing the frontier policy:
 - [x] count suppressed/retried goals
 - [x] record completion result
 - [ ] compute or record accessible-area coverage where practical
-- [ ] verify recorder on ROS 2 Jazzy/Pi and measure overhead
+- [x] exercise recorder on ROS 2 Jazzy/Pi (exploratory interrupted run)
+- [ ] measure recorder/evaluator overhead
+- [ ] diagnose repeated Nav2 TF-error aborts before scoring changes (BENCHMARK_DIAGNOSTIC_01.md)
 - [ ] add aligned offline truth-grid coverage analysis (see BENCHMARKING.md)
 - [ ] save a baseline result for `build_complex_world()`
 
