@@ -221,3 +221,18 @@ Instrumentation checks on macOS: `./scripts/test.sh all` passed 357 unit tests;
 observation before late-frame refresh, observer-error isolation, unchanged wire
 responses and no automatic re-arm. The new simulator topic smoke test still
 requires Jazzy/Pi. Local unit success is not runtime/physical acceptance.
+
+## Offline SLAM replay experiment
+
+The isolated sim-05 A1/A2 -> gated B1/B2 harness is implemented; see
+`SLAM_REPLAY.md` for evidence, timestamp/TF ownership contracts and Pi commands.
+It tests loop closure against the observed 1.52 m correction/raw-map corruption.
+No live configuration or runtime behavior changed. Missing pre-bag pose-graph
+history can prevent baseline reproduction; no B experiment is permitted then.
+Mac checks cover pure filtering/geometry/gates; actual Pi/Jazzy replay remains
+unverified. No loop-closure fix or formal map/coverage acceptance is claimed.
+
+Replay harness local verification: `./scripts/test.sh all` passed 365 unit tests;
+9 ROS integration tests skipped (ROS unavailable on Mac), including mixed-TF CDR
+and MCAP preparation checks. Python compilation and `git diff --check` passed.
+No replay trial has been performed locally.

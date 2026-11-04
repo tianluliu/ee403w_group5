@@ -110,3 +110,11 @@ The following remain unclaimed until the procedures in `test_procedures.md` are 
 - [ ] choose repository/ROS package license and consistent maintainer metadata (HQ-19)
 
 3D Gaussian Splatting remains outside the committed project scope.
+
+## sim-05 offline SLAM diagnosis
+
+- [x] implement isolated replay filtering, measurements and A1/A2 reproduction gate (`SLAM_REPLAY.md`)
+- [ ] validate harness on Pi/Jazzy; reproduce original map corruption in BOTH A runs
+- [ ] only after gate passes, run B1/B2 with sole change do_loop_closing=false
+- [ ] compare raw maps/TF and logs; adopt no SLAM change without reproducible evidence
+- [ ] if A cannot reproduce, capture original-start graph/accepted-scan/constraint history live
